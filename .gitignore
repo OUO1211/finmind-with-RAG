@@ -1,0 +1,12 @@
+# Environment variables (contains sensitive info, do not upload)
+.env
+
+# Cache data
+data/
+
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
