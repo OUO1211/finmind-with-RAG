@@ -86,7 +86,13 @@ def main():
             continue
 
         print("\n思考中...")
-        answer = rag.ask(question)
+
+        filter_choice = input("是否要篩選特定股票？(輸入股票代號，或按 Enter 跳過)：").strip()
+        if filter_choice:
+            stock_id = filter_choice
+        else:
+            stock_id = None
+        answer = rag.ask(question, stock_id)
         print(f"\n回答：\n{answer}")
 
 

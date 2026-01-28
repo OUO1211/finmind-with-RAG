@@ -33,7 +33,7 @@ class RAGService:
         self.model = model
         self.base_url = base_url
 
-    def ask(self, question: str) -> str:
+    def ask(self, question: str, stock_id: str = None) -> str:
         """
         回答使用者問題
 
@@ -44,16 +44,16 @@ class RAGService:
             LLM 生成的回答
         """
         # 1. 搜尋相關 chunks
-        chunks = self.vector_store.query(question)
+        chunks = self.vector_store.query(question, stock_id = stock_id)
 
         # 2. 組成 prompt
         context = "\n".join(chunks[0])
         prompt = f"""根據以下資料回答問題：
 
-{context}
+        {context}
 
-問題：{question}
-"""
+        問題：{question}
+        """
 
         # 3. 呼叫 Ollama API
         response = requests.post(
