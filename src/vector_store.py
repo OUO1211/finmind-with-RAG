@@ -39,6 +39,12 @@ class VectorStore:
             chunks: 文字列表
             stock_id: 股票代號
         """
+        existing = self.collection.get(where={"stock_id": stock_id})
+        if existing["ids"]:
+            self.collection.delete(ids=existing["ids"])
+            print(f"[VectorStore] 已刪除 {stock_id} 的 {len(existing['ids'])} 筆舊資料")
+
+
         ids = []
         embeddings = []
         metadatas = []
