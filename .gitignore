@@ -4,6 +4,9 @@
 # Cache data
 data/
 
+# Vector database
+chroma_db/
+
 # Python
 __pycache__/
 *.pyc
