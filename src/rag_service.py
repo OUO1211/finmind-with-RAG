@@ -33,7 +33,7 @@ class RAGService:
         self.model = model
         self.base_url = base_url
 
-    def ask(self, question: str, stock_id: str = None) -> str:
+    def ask(self, question: str, stock_id: str = None, n_results = 3) -> str:
         """
         回答使用者問題
 
@@ -44,7 +44,7 @@ class RAGService:
             LLM 生成的回答
         """
         # 1. 搜尋相關 chunks
-        chunks = self.vector_store.query(question, stock_id = stock_id)
+        chunks = self.vector_store.query(question, n_results = n_results, stock_id = stock_id)
 
         # 2. 組成 prompt
         context = "\n".join(chunks[0])
