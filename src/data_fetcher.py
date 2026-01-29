@@ -5,6 +5,7 @@ DataFetcher：資料獲取器
 
 from FinMind.data import DataLoader
 import pandas as pd
+import requests
 import os
 
 
@@ -52,6 +53,9 @@ class DataFetcher:
         except Exception as e:
             print(f"[DataFetcher] 錯誤：獲取財報失敗 - {e}")
             return pd.DataFrame()
+        
+        
+
 
     def get_stock_price(self, stock_id: str,
                         start_date: str, end_date: str) -> pd.DataFrame:
@@ -90,3 +94,60 @@ class DataFetcher:
         except Exception as e:
             print(f"[DataFetcher] 錯誤：獲取月營收失敗 - {e}")
             return pd.DataFrame()
+        
+
+    def get_stock_list(self):
+        url = "https://api.finmindtrade.com/api/v4/data?"
+        params = {
+            "dataset": "TaiwanStockInfo"
+        }
+
+        response = requests.get(url, params=params)
+        data = response.json()
+        return data["data"]
+
+    
+    def get_per(self, stock_id: str, start_date: str, end_date: str) -> pd.DataFrame:
+        """獲取本益比、殖利率、PBR"""
+        url = "https://api.finmindtrade.com/api/v4/data"
+        params = {
+            "dataset": "TaiwanStockPER",
+            "data_id": stock_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        
+        response = requests.get(url, params=params)
+        data = response.json()
+        
+        # data["data"] 是 list of dict，轉成 DataFrame
+        return pd.DataFrame(data["data"])
+ 
+
+    def get_balance_sheet(self, stock_id: str,
+                          start_date: str, end_date: str):
+        url = "https://api.finmindtrade.com/api/v4/data"
+        params = {
+            "dataset": "TaiwanStockBalanceSheet",
+            "data_id": stock_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            # 不帶 token，使用匿名額度
+        }
+        
+        try:
+            response = requests.get(url, params=params)
+            data = response.json()
+            
+            if "data" not in data:
+                print(f"[DataFetcher] 警告：{stock_id} 資產負債表查無資料")
+                return pd.DataFrame()
+                
+            df = pd.DataFrame(data["data"])
+            print(f"[DataFetcher] 成功獲取 {len(df)} 筆資產負債表資料")
+            return df
+            
+        except Exception as e:
+            print(f"[DataFetcher] 錯誤：獲取資產負債表失敗 - {e}")
+            return pd.DataFrame() 
+        

@@ -25,6 +25,19 @@ class TextProcessor:
         "PreTaxIncome": "稅前淨利",
         "NetIncome": "淨利",
         "OperatingExpenses": "營業費用",
+        "CashAndCashEquivalents": "現金及約當現金",
+        "AccountsReceivableNet": "應收帳款淨額",
+        "Inventories": "存貨",
+        "CurrentAssets": "流動資產",
+        "PropertyPlantAndEquipment": "不動產廠房設備",
+        "TotalAssets": "總資產",
+        "ShorttermBorrowings": "短期借款" ,
+        "LongtermBorrowings": "長期借款",
+        "CurrentLiabilities": "流動負債",
+        "Liabilities": "負債總額",
+        "CapitalStock": "股本",
+        "RetainedEarnings": "保留盈餘",
+        "Equity": "股東權益"
     }
 
     # 月份 → 季度對照表
@@ -140,3 +153,29 @@ class TextProcessor:
         ).tolist()
 
         return chunks
+    
+
+    def _format_per_row(self, row, stock_name: str) -> str:
+        """
+        格式化單一 row 為文字
+
+        Args:
+            row: DataFrame 的一行資料（由 .apply() 傳入）
+            stock_name: 股票名稱
+
+        Returns:
+            格式化後的文字，例如 "2023年第1季 台積電(2330) 的EPS為 7.98 元。"
+        """
+       
+        # 組合股票名稱
+        if stock_name:
+            stock_str = f"{stock_name}({row['stock_id']})"
+        else:
+            stock_str = f"股票{row['stock_id']}"
+
+        return f"{row['date']}{stock_str}本益比{row['PER']}倍，殖利率{row['dividend_yield']}%，股價淨值比{row['PBR']}倍。"
+
+
+    def per_to_chunks(self, df: pd.DataFrame, stock_name: str = None):
+        return df.apply(lambda row: self._format_per_row(row, stock_name), axis=1
+                    ).tolist()

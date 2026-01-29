@@ -3,6 +3,8 @@ FinMind RAG 財報分析系統 - 主程式
 """
 
 import os
+import time
+import pandas as pd
 from dotenv import load_dotenv
 from src import (
     DataService,
@@ -51,24 +53,50 @@ def main():
     print("載入股票資料")
     print("=" * 60)
 
-    stock_id = "2330"
-    stock_name = "台積電"
+    stock_list = data_service.fetcher.get_stock_list()
 
-    df = data_service.get_data(
-        stock_id=stock_id,
-        data_type="financial_statement",
-        start_date="2023-01-01",
-        end_date="2024-01-01"
-    )
+    target_ids = ["2330", "2317"]
+    target_stocks = list({s["stock_id"]: s for s in stock_list if s["stock_id"] in target_ids}.values())
 
-    if not df.empty:
-        # 轉換成文字 chunks
-        chunks = text_processor.df_to_chunks(df, stock_name=stock_name)
-        print(f"產生 {len(chunks)} 個文字片段")
 
-        # 存入向量資料庫（如果還沒存過）
-        # 注意：重複執行會重複存入，實際應用需要檢查
-        # vector_store.add(chunks=chunks, stock_id=stock_id)
+    for stock in target_stocks:
+        stock_id = stock["stock_id"]
+        stock_name = stock["stock_name"]
+
+        df = data_service.get_data(
+            stock_id=stock_id,
+            data_type="financial_statement",
+            start_date="2023-01-01",
+            end_date="2024-01-01"
+        )
+
+        all_chunks = []
+
+        if not df.empty:
+            # 轉換成文字 chunks
+            chunks = text_processor.df_to_chunks(df, stock_name=stock_name)
+            all_chunks.extend(chunks)
+        
+        time.sleep(1)
+
+
+        per_df = data_service.fetcher.get_per(stock_id, "2023-01-01", "2024-01-01")
+        if not per_df.empty:
+            per_df['date'] = pd.to_datetime(per_df['date'])  # 轉成日期格式
+            per_df = per_df.groupby(per_df['date'].dt.to_period('M')).last()  # 每月最後一筆
+            per_df['date'] = per_df['date'].dt.strftime('%Y-%m-%d')
+            per_df = per_df.reset_index(drop=True)  # 重設 index
+
+            per_chunks = text_processor.per_to_chunks(per_df, stock_name)
+            all_chunks.extend(per_chunks)
+
+        balance_sheet_df = data_service.fetcher.get_balance_sheet(stock_id, "2023-01-01", "2024-01-01")
+        if not balance_sheet_df.empty:
+            balance_sheet_chunks = text_processor.df_to_chunks(balance_sheet_df, stock_name)
+            all_chunks.extend(balance_sheet_chunks)
+
+        if all_chunks:
+            vector_store.add(all_chunks, stock_id)
 
     # --- 3. 互動問答 ---
     print("\n" + "=" * 60)
@@ -88,11 +116,13 @@ def main():
         print("\n思考中...")
 
         filter_choice = input("是否要篩選特定股票？(輸入股票代號，或按 Enter 跳過)：").strip()
+        n_input = input("要幾筆資料？(預設3，按 Enter 跳過)：").strip()
+        n_results = int(n_input) if n_input else 3
         if filter_choice:
             stock_id = filter_choice
         else:
             stock_id = None
-        answer = rag.ask(question, stock_id)
+        answer = rag.ask(question, stock_id, n_results)
         print(f"\n回答：\n{answer}")
 
 
