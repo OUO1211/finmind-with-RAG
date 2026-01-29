@@ -47,3 +47,18 @@ class EmbeddingService:
         )
         result = response.json()
         return result["embedding"]
+    
+
+    def embed_batch(self, texts: list[str]):
+        url = f"{self.base_url}/api/embed"
+        response = requests.post(
+            url,
+            json={
+                "model": self.model,
+                "input": texts
+            }
+        )
+        result = response.json()
+        return result["embeddings"]
+        
+

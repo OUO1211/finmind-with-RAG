@@ -39,6 +39,8 @@ class VectorStore:
             chunks: 文字列表
             stock_id: 股票代號
         """
+
+
         existing = self.collection.get(where={"stock_id": stock_id})
         if existing["ids"]:
             self.collection.delete(ids=existing["ids"])
@@ -46,18 +48,15 @@ class VectorStore:
 
 
         ids = []
-        embeddings = []
         metadatas = []
 
         for i, chunk in enumerate(chunks):
             id = f"{stock_id}_{i}"
             ids.append(id)
-
-            embed = self.embedding_service.embed(chunk)
-            embeddings.append(embed)
-
             metadata = {"stock_id": stock_id}
             metadatas.append(metadata)
+        
+        embeddings = self.embedding_service.embed_batch(chunks)
 
         self.collection.add(
             ids=ids,
@@ -93,4 +92,4 @@ class VectorStore:
                 n_results=n_results,
             )
 
-        return result["documents"]
+        return result["documents"] # 二維string
