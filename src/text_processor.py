@@ -4,6 +4,7 @@ TextProcessor：文字處理器
 """
 
 import pandas as pd
+import numpy as np
 
 
 class TextProcessor:
@@ -179,3 +180,55 @@ class TextProcessor:
     def per_to_chunks(self, df: pd.DataFrame, stock_name: str = None):
         return df.apply(lambda row: self._format_per_row(row, stock_name), axis=1
                     ).tolist()
+
+
+    def _calculate_growth_rates(self, df: pd.DataFrame) -> pd.DataFrame:
+
+        df = df.copy()
+        df['year'] = df['date'].str[:4].astype(int)
+        df['month'] = df['date'].str[5:7].astype(int)
+        df['quarter'] = df['month'].map(self.MONTH_TO_QUARTER)
+        df = df.sort_values(['stock_id', 'type', 'year', 'quarter'])
+        df['prev_value'] = df.groupby(['stock_id', 'type'])['value'].shift(1)
+        df['qoq'] = (df['value'] - df['prev_value']) / abs(df['prev_value']) * 100
+        df['qoq'] = df['qoq'].replace((np.inf, -np.inf), np.nan)
+
+        df['prev_year_value'] = df.groupby(['stock_id', 'type'])['value'].shift(4)
+        df['yoy'] = (df['value'] - df['prev_year_value']) / abs(df['prev_year_value']) * 100
+        df['yoy'] = df['yoy'].replace((np.inf, -np.inf), np.nan)
+
+        return df
+    
+
+
+    def _format_growth_row(self, row, stock_name: str) -> str:
+        indicator_name = self.INDICATOR_NAMES[row['type']]
+
+        # 格式化數字
+        value_str = self._format_number(row['value'], row['type'])
+        if stock_name:
+            stock_str = f"{stock_name}({row['stock_id']})"
+        else:
+            stock_str = f"股票{row['stock_id']}"
+
+        if pd.isna(row['qoq']) and pd.notna(row['yoy']):
+            return f"{row['year']}年第{row['quarter']}季 {stock_str} 的{indicator_name}為 {value_str}，季增[無資料]，年增{row['yoy']:.2f}%。"
+        elif pd.notna(row['qoq']) and pd.isna(row['yoy']):
+            return f"{row['year']}年第{row['quarter']}季 {stock_str} 的{indicator_name}為 {value_str}，季增{row['qoq']:.2f}%，年增[無資料]。"
+        elif pd.isna(row['qoq']) and pd.isna(row['yoy']):
+            return f"{row['year']}年第{row['quarter']}季 {stock_str} 的{indicator_name}為 {value_str}，季增[無資料]，年增[無資料]。"
+        else:
+            return f"{row['year']}年第{row['quarter']}季 {stock_str} 的{indicator_name}為 {value_str}，季增{row['qoq']:.2f}%，年增{row['yoy']:.2f}%。"
+        
+
+
+    def growth_to_chunks(self, df: pd.DataFrame, stock_name: str = None) -> list[str]:
+        df = self._calculate_growth_rates(df)
+        target_types = list(self.INDICATOR_NAMES.keys())
+        filtered_df = df[df['type'].isin(target_types)]
+        
+        chunks = filtered_df.apply(
+            lambda row: self._format_growth_row(row, stock_name), axis=1
+        ).tolist()
+
+        return chunks

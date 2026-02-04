@@ -1,9 +1,10 @@
 """
 EmbeddingService：向量化服務
-功能：將文字轉換成向量（embedding），使用 Ollama API
+功能：將文字轉換成向量（embedding），使用 HuggingFace sentence-transformers
 """
 
-import requests
+
+from sentence_transformers import SentenceTransformer
 
 
 class EmbeddingService:
@@ -11,54 +12,31 @@ class EmbeddingService:
     向量化服務
 
     職責：
-    1. 連接 Ollama API
+    1. 載入 HuggingFace embedding model
     2. 將文字轉換成向量
     """
 
-    def __init__(self, model: str = "nomic-embed-text",
-                 base_url: str = "http://localhost:11434"):
+    def __init__(self, model: str = "BAAI/bge-base-zh-v1.5"):
         """
         建構子
 
         Args:
-            model: 模型名稱，預設 nomic-embed-text
-            base_url: Ollama API 網址
+            model: HuggingFace 模型名稱，預設使用中文模型
         """
-        self.model = model
-        self.base_url = base_url
+        self.model = SentenceTransformer(model)
+
 
     def embed(self, text: str) -> list[float]:
-        """
-        將文字轉換成向量
+        """將文字轉換成向量"""
+        embedding = self.model.encode(text)
+        return embedding.tolist()  # 轉成 list
 
-        Args:
-            text: 要轉換的文字
-
-        Returns:
-            向量（list of floats）
-        """
-        url = f"{self.base_url}/api/embeddings"
-        response = requests.post(
-            url,
-            json={
-                "model": self.model,
-                "prompt": text
-            }
-        )
-        result = response.json()
-        return result["embedding"]
     
 
-    def embed_batch(self, texts: list[str]):
-        url = f"{self.base_url}/api/embed"
-        response = requests.post(
-            url,
-            json={
-                "model": self.model,
-                "input": texts
-            }
-        )
-        result = response.json()
-        return result["embeddings"]
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """批次轉換"""
+        embeddings = self.model.encode(texts)
+        return embeddings.tolist()
+
         
 

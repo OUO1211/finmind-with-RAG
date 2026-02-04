@@ -31,7 +31,8 @@ def main():
     text_processor = TextProcessor()
 
     print("\n[3/5] 初始化向量化服務...")
-    embedding_service = EmbeddingService(model="nomic-embed-text")
+    embedding_service = EmbeddingService(model="BAAI/bge-base-zh-v1.5")
+
 
     print("\n[4/5] 初始化向量資料庫...")
     vector_store = VectorStore(
@@ -66,8 +67,8 @@ def main():
         df = data_service.get_data(
             stock_id=stock_id,
             data_type="financial_statement",
-            start_date="2023-01-01",
-            end_date="2024-01-01"
+            start_date="2022-01-01",
+            end_date="2025-01-01"
         )
 
         all_chunks = []
@@ -93,6 +94,8 @@ def main():
         balance_sheet_df = data_service.fetcher.get_balance_sheet(stock_id, "2023-01-01", "2024-01-01")
         if not balance_sheet_df.empty:
             balance_sheet_chunks = text_processor.df_to_chunks(balance_sheet_df, stock_name)
+
+        
             all_chunks.extend(balance_sheet_chunks)
 
         if all_chunks:
