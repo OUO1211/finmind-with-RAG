@@ -34,6 +34,8 @@ class DataService:
             "financial_statement": self.fetcher.get_financial_statement,
             "stock_price": self.fetcher.get_stock_price,
             "monthly_revenue": self.fetcher.get_monthly_revenue,
+            "balance_sheet": self.fetcher.get_balance_sheet,
+            "per": self.fetcher.get_per,
         }
 
     def get_data(self, stock_id: str, data_type: str,

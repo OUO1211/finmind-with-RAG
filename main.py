@@ -81,7 +81,12 @@ def main():
         time.sleep(1)
 
 
-        per_df = data_service.fetcher.get_per(stock_id, "2023-01-01", "2024-01-01")
+        per_df = data_service.get_data(
+            stock_id=stock_id,
+            data_type="per",
+            start_date="2023-01-01",
+            end_date="2024-01-01"
+        )
         if not per_df.empty:
             per_df['date'] = pd.to_datetime(per_df['date'])  # 轉成日期格式
             per_df = per_df.groupby(per_df['date'].dt.to_period('M')).last()  # 每月最後一筆
@@ -91,16 +96,33 @@ def main():
             per_chunks = text_processor.per_to_chunks(per_df, stock_name)
             all_chunks.extend(per_chunks)
 
-        balance_sheet_df = data_service.fetcher.get_balance_sheet(stock_id, "2022-01-01", "2025-01-01")
+        balance_sheet_df = data_service.get_data(
+            stock_id=stock_id,
+            data_type="balance_sheet",
+            start_date="2022-01-01",
+            end_date="2025-01-01"
+        )
         if not balance_sheet_df.empty:
             balance_sheet_chunks = text_processor.df_to_chunks(balance_sheet_df, stock_name)
 
         
             all_chunks.extend(balance_sheet_chunks)
+
             # 測試 ROE/ROA
             roe_roa_chunks = text_processor.roe_roa_to_chunks(df, balance_sheet_df, stock_name)
-            print(f"ROE/ROA chunks: {roe_roa_chunks[:3]}")  # 印出前 3 筆看看
+            print(f"ROE/ROA chunks: {roe_roa_chunks[:3]}") 
             all_chunks.extend(roe_roa_chunks)
+
+            # 測試負債比/流動比率
+            debt_chunks = text_processor.debt_current_to_chunks(balance_sheet_df, stock_name)
+            print(f"Debt/Current chunks: {debt_chunks[:3]}")
+            all_chunks.extend(debt_chunks)
+
+            # 毛利率/營益率
+            margin_chunks = text_processor.margin_to_chunks(df, stock_name)
+            print(f"Margin chunks: {margin_chunks[:3]}")
+            all_chunks.extend(margin_chunks)
+
 
 
         if all_chunks:

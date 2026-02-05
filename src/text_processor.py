@@ -272,3 +272,88 @@ class TextProcessor:
             stock_str = f"股票{row['stock_id']}"
         
         return f"{quarter_str}{stock_str}的ROE為{row['roe']:.2f}%，ROA為{row['roa']:.2f}%"
+
+
+
+    def debt_current_to_chunks(self, balance_df: pd.DataFrame, stock_name: str = None) -> list[str]:
+        liabilities = balance_df[balance_df['type'] == 'Liabilities']
+        total_assets = balance_df[balance_df['type'] == 'TotalAssets']
+        current_assets = balance_df[balance_df['type'] == 'CurrentAssets']
+        current_liabilities = balance_df[balance_df['type'] == 'CurrentLiabilities']
+
+        liabilities = liabilities[['stock_id','date', 'value']].rename(columns={'value': 'liabilities'})
+        total_assets = total_assets[['stock_id','date', 'value']].rename(columns={'value': 'total_assets'})
+        current_assets = current_assets[['stock_id','date', 'value']].rename(columns={'value': 'current_assets'})
+        current_liabilities = current_liabilities[['stock_id','date', 'value']].rename(columns={'value': 'current_liabilities'})
+
+        liabilities['stock_id'] = liabilities['stock_id'].astype(str)
+        total_assets['stock_id'] = total_assets['stock_id'].astype(str)
+        current_assets['stock_id'] = current_assets['stock_id'].astype(str)
+        current_liabilities['stock_id'] = current_liabilities['stock_id'].astype(str)
+
+                                                                                       
+        df = pd.merge(liabilities, total_assets, on=['stock_id', 'date'], how= 'inner')
+        df = pd.merge(df, current_assets, on=['stock_id', 'date'], how= 'inner')
+        df = pd.merge(df, current_liabilities, on=['stock_id', 'date'], how= 'inner')
+
+        df = self._debt_calculation(df) 
+
+        chunks = df.apply(lambda row: self._format_debt_row(row, stock_name), axis=1).tolist()
+        return chunks
+
+    def _debt_calculation(self, df: pd.DataFrame):
+        df['debtRatio'] = df['liabilities'] / df['total_assets'] * 100
+        df['currentRatio'] = df['current_assets'] / df['current_liabilities'] * 100
+        return df
+    
+
+
+    def _format_debt_row(self, row, stock_name: str) -> str: 
+        quarter_str = self._date_to_quarter(row['date'])
+
+        if stock_name:
+            stock_str = f"{stock_name}({row['stock_id']})"
+        else:
+            stock_str = f"股票{row['stock_id']}"
+        
+        return f"{quarter_str}{stock_str}的負債比為{row['debtRatio']:.2f}%流動比率為{row['currentRatio']:.2f}%"
+
+
+    def margin_to_chunks(self, financial_df: pd.DataFrame, stock_name: str = None) -> list[str]:
+        """計算毛利率和營益率，回傳 chunks"""
+        gross_profit = financial_df[financial_df['type'] == 'GrossProfit']
+        operating_income = financial_df[financial_df['type'] == 'OperatingIncome']
+        revenue = financial_df[financial_df['type'] == 'Revenue']
+
+        gross_profit = gross_profit[['stock_id', 'date', 'value']].rename(columns={'value': 'gross_profit'})
+        operating_income = operating_income[['stock_id', 'date', 'value']].rename(columns={'value': 'operating_income'})
+        revenue = revenue[['stock_id', 'date', 'value']].rename(columns={'value': 'revenue'})
+
+        gross_profit['stock_id'] = gross_profit['stock_id'].astype(str)
+        operating_income['stock_id'] = operating_income['stock_id'].astype(str)
+        revenue['stock_id'] = revenue['stock_id'].astype(str)
+
+        df = pd.merge(gross_profit, operating_income, on=['stock_id', 'date'], how='inner')
+        df = pd.merge(df, revenue, on=['stock_id', 'date'], how='inner')
+
+        df = self._calculate_margin(df)
+
+        chunks = df.apply(lambda row: self._format_margin_row(row, stock_name), axis=1).tolist()
+        return chunks
+
+    def _calculate_margin(self, df: pd.DataFrame) -> pd.DataFrame:
+        """計算毛利率和營益率"""
+        df['gross_margin'] = df['gross_profit'] / df['revenue'] * 100
+        df['operating_margin'] = df['operating_income'] / df['revenue'] * 100
+        return df
+
+    def _format_margin_row(self, row, stock_name: str) -> str:
+        """格式化毛利率/營益率輸出"""
+        quarter_str = self._date_to_quarter(row['date'])
+
+        if stock_name:
+            stock_str = f"{stock_name}({row['stock_id']})"
+        else:
+            stock_str = f"股票{row['stock_id']}"
+
+        return f"{quarter_str}{stock_str}的毛利率為{row['gross_margin']:.2f}%，營益率為{row['operating_margin']:.2f}%"
