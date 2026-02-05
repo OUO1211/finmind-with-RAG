@@ -91,12 +91,17 @@ def main():
             per_chunks = text_processor.per_to_chunks(per_df, stock_name)
             all_chunks.extend(per_chunks)
 
-        balance_sheet_df = data_service.fetcher.get_balance_sheet(stock_id, "2023-01-01", "2024-01-01")
+        balance_sheet_df = data_service.fetcher.get_balance_sheet(stock_id, "2022-01-01", "2025-01-01")
         if not balance_sheet_df.empty:
             balance_sheet_chunks = text_processor.df_to_chunks(balance_sheet_df, stock_name)
 
         
             all_chunks.extend(balance_sheet_chunks)
+            # 測試 ROE/ROA
+            roe_roa_chunks = text_processor.roe_roa_to_chunks(df, balance_sheet_df, stock_name)
+            print(f"ROE/ROA chunks: {roe_roa_chunks[:3]}")  # 印出前 3 筆看看
+            all_chunks.extend(roe_roa_chunks)
+
 
         if all_chunks:
             vector_store.add(all_chunks, stock_id)

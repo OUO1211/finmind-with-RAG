@@ -232,3 +232,43 @@ class TextProcessor:
         ).tolist()
 
         return chunks
+    
+
+    def roe_roa_to_chunks(self, financial_df: pd.DataFrame, balance_df: pd.DataFrame, stock_name: str = None) -> list[str]:
+        assets = balance_df[balance_df['type'] == 'TotalAssets']
+        equity = balance_df[balance_df['type'] == 'Equity']
+        incomeAfterTaxes = financial_df[financial_df['type'] == 'IncomeAfterTaxes']
+
+        incomeAfterTaxes = incomeAfterTaxes[['stock_id', 'date', 'value']].rename(columns={'value': 'net_income'})
+        equity = equity[['stock_id', 'date', 'value']].rename(columns={'value': 'equity'})
+        assets = assets[['stock_id', 'date', 'value']].rename(columns={'value': 'total_assets'})
+
+        incomeAfterTaxes['stock_id'] = incomeAfterTaxes['stock_id'].astype(str)
+        equity['stock_id'] = equity['stock_id'].astype(str)
+        assets['stock_id'] = assets['stock_id'].astype(str)
+
+
+        df = pd.merge(incomeAfterTaxes, equity, on=['stock_id', 'date'], how= 'inner')
+        df = pd.merge(df, assets, on=['stock_id', 'date'], how= 'inner')
+        df = self._roe_roa_calculation(df) 
+
+        chunks = df.apply(lambda row: self._format_roe_roa_row(row, stock_name), axis=1).tolist()
+        return chunks
+    
+
+    def _roe_roa_calculation(self, df: pd.DataFrame):
+        df['roe'] = df['net_income'] / df['equity'] * 100
+        df['roa'] = df['net_income'] / df['total_assets'] * 100
+        return df
+    
+
+
+    def _format_roe_roa_row(self, row, stock_name: str) -> str:
+        quarter_str = self._date_to_quarter(row['date'])
+
+        if stock_name:
+            stock_str = f"{stock_name}({row['stock_id']})"
+        else:
+            stock_str = f"股票{row['stock_id']}"
+        
+        return f"{quarter_str}{stock_str}的ROE為{row['roe']:.2f}%，ROA為{row['roa']:.2f}%"

@@ -37,23 +37,26 @@ class DataFetcher:
 
     def get_financial_statement(self, stock_id: str,
                                  start_date: str, end_date: str) -> pd.DataFrame:
-        """獲取財務報表（綜合損益表）"""
+        url = "https://api.finmindtrade.com/api/v4/data"
+        params = {
+         "dataset": "TaiwanStockFinancialStatements",
+         "data_id": stock_id,
+         "start_date": start_date,
+         "end_date": end_date
+        }
+       
         try:
-            print(f"[DataFetcher] 正在獲取 {stock_id} 的財報資料...")
-            df = self.loader.taiwan_stock_financial_statement(
-                stock_id=stock_id,
-                start_date=start_date,
-                end_date=end_date
-            )
-            if df.empty:
-                print(f"[DataFetcher] 警告：{stock_id} 財報查無資料")
-            else:
-                print(f"[DataFetcher] 成功獲取 {len(df)} 筆財報資料")
+            response = requests.get(url, params=params)
+            data = response.json()
+
+            if "data" not in data:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(data["data"])
             return df
         except Exception as e:
-            print(f"[DataFetcher] 錯誤：獲取財報失敗 - {e}")
+
             return pd.DataFrame()
-        
         
 
 
