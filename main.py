@@ -108,20 +108,28 @@ def main():
         
             all_chunks.extend(balance_sheet_chunks)
 
-            # 測試 ROE/ROA
+            # ROE/ROA
             roe_roa_chunks = text_processor.roe_roa_to_chunks(df, balance_sheet_df, stock_name)
-            print(f"ROE/ROA chunks: {roe_roa_chunks[:3]}") 
             all_chunks.extend(roe_roa_chunks)
 
-            # 測試負債比/流動比率
+            # 負債比/流動比率
             debt_chunks = text_processor.debt_current_to_chunks(balance_sheet_df, stock_name)
-            print(f"Debt/Current chunks: {debt_chunks[:3]}")
             all_chunks.extend(debt_chunks)
 
             # 毛利率/營益率
             margin_chunks = text_processor.margin_to_chunks(df, stock_name)
-            print(f"Margin chunks: {margin_chunks[:3]}")
             all_chunks.extend(margin_chunks)
+
+        # 現金流量表
+        cash_flow_df = data_service.get_data(
+            stock_id=stock_id,
+            data_type="cash_flow",
+            start_date="2022-01-01",
+            end_date="2025-01-01"
+        )
+        if not cash_flow_df.empty and not df.empty:
+            cash_flow_chunks = text_processor.cash_flow_to_chunks(cash_flow_df, df, stock_name)
+            all_chunks.extend(cash_flow_chunks)
 
 
 

@@ -152,5 +152,32 @@ class DataFetcher:
             
         except Exception as e:
             print(f"[DataFetcher] 錯誤：獲取資產負債表失敗 - {e}")
-            return pd.DataFrame() 
+            return pd.DataFrame()
+
+    def get_cash_flow_statement(self, stock_id: str,
+                                start_date: str, end_date: str) -> pd.DataFrame:
+        """獲取現金流量表資料"""
+        url = "https://api.finmindtrade.com/api/v4/data"
+        params = {
+            "dataset": "TaiwanStockCashFlowsStatement",
+            "data_id": stock_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+
+        try:
+            response = requests.get(url, params=params)
+            data = response.json()
+
+            if "data" not in data:
+                print(f"[DataFetcher] 警告：{stock_id} 現金流量表查無資料")
+                return pd.DataFrame()
+
+            df = pd.DataFrame(data["data"])
+            print(f"[DataFetcher] 成功獲取 {len(df)} 筆現金流量表資料")
+            return df
+
+        except Exception as e:
+            print(f"[DataFetcher] 錯誤：獲取現金流量表失敗 - {e}")
+            return pd.DataFrame()
         

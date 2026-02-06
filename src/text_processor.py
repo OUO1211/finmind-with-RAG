@@ -357,3 +357,52 @@ class TextProcessor:
             stock_str = f"股票{row['stock_id']}"
 
         return f"{quarter_str}{stock_str}的毛利率為{row['gross_margin']:.2f}%，營益率為{row['operating_margin']:.2f}%"
+
+
+    def cash_flow_to_chunks(self, cash_flow_df: pd.DataFrame, financial_df: pd.DataFrame, stock_name: str = None) -> list[str]:
+        """計算現金流相關指標，回傳 chunks"""
+        # 營業現金流
+        operating_cf = cash_flow_df[cash_flow_df['type'] == 'CashFlowsFromOperatingActivities']
+        # 淨利（用於計算獲利品質）
+        net_income = financial_df[financial_df['type'] == 'IncomeAfterTaxes']
+
+        operating_cf = operating_cf[['stock_id', 'date', 'value']].rename(columns={'value': 'operating_cash_flow'})
+        net_income = net_income[['stock_id', 'date', 'value']].rename(columns={'value': 'net_income'})
+
+        operating_cf['stock_id'] = operating_cf['stock_id'].astype(str)
+        net_income['stock_id'] = net_income['stock_id'].astype(str)
+
+        df = pd.merge(operating_cf, net_income, on=['stock_id', 'date'], how='inner')
+
+        df = self._calculate_cash_flow(df)
+
+        chunks = df.apply(lambda row: self._format_cash_flow_row(row, stock_name), axis=1).tolist()
+        return chunks
+
+    def _calculate_cash_flow(self, df: pd.DataFrame) -> pd.DataFrame:
+        """計算現金流品質指標"""
+        # 營業現金流/淨利：大於 1 表示獲利品質好（賺到的是真金白銀）
+        df['cf_to_income'] = df['operating_cash_flow'] / df['net_income'] * 100
+        df['cf_to_income'] = df['cf_to_income'].replace([np.inf, -np.inf], np.nan)
+        return df
+
+    def _format_cash_flow_row(self, row, stock_name: str) -> str:
+        """格式化現金流輸出"""
+        quarter_str = self._date_to_quarter(row['date'])
+
+        if stock_name:
+            stock_str = f"{stock_name}({row['stock_id']})"
+        else:
+            stock_str = f"股票{row['stock_id']}"
+
+        # 格式化營業現金流（大數字用億元）
+        ocf = row['operating_cash_flow']
+        if abs(ocf) >= 1e8:
+            ocf_str = f"{ocf / 1e8:.2f}億元"
+        else:
+            ocf_str = f"{ocf / 1e4:.2f}萬元"
+
+        if pd.isna(row['cf_to_income']):
+            return f"{quarter_str}{stock_str}的營業現金流（累計）為{ocf_str}，現金流/淨利比為[無資料]。"
+        else:
+            return f"{quarter_str}{stock_str}的營業現金流（累計）為{ocf_str}，現金流/淨利比為{row['cf_to_income']:.2f}%。"
