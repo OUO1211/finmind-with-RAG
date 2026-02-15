@@ -134,3 +134,184 @@ class Backtester:
         
 
 
+
+    def ma_strategy(self, price_df: pd.DataFrame, short_window = 5, long_window = 20
+                    ,include_cost: bool = True) -> dict:
+        
+        df = price_df.sort_values('date').reset_index(drop=True)
+        df['short_ma'] = df['close'].rolling(short_window).mean()
+        df['long_ma'] = df['close'].rolling(long_window).mean()
+        df = df.dropna().reset_index(drop=True)
+
+        holding = False
+        buy_price = 0
+        buy_date = None
+        trades = []
+
+        for i, row in df.iterrows():
+            if not holding and row['short_ma'] > row['long_ma']:
+                holding = True
+                buy_price = row['close']
+                buy_date = row['date']
+
+            elif holding and row['short_ma'] < row['long_ma']:
+                holding = False
+                sell_price = row['close']
+
+                if include_cost:
+                    cost = buy_price * (1 + self.COMMISSION_RATE)
+                    income = sell_price * (1 - self.COMMISSION_RATE - self.TAX_RATE)
+                    trade_return = (income - cost) / cost * 100
+                else:
+                    trade_return = (sell_price - buy_price) / buy_price * 100
+
+                trades.append({
+                            'buy_date': buy_date,
+                            'sell_date': row['date'],
+                            'buy_price': buy_price,
+                            'sell_price': sell_price,
+                            'return': round(trade_return, 2)
+                        })
+            
+
+        if len(trades) == 0:
+            total_return = 0
+        else:
+            total_return = sum(t['return'] for t in trades)
+
+        return {
+            'trades': trades,
+            'total_trades': len(trades),
+            'total_return': round(total_return, 2),
+            'include_cost': include_cost
+        }
+    
+
+    def rsi_strategy(self, price_df: pd.DataFrame, period=14,
+                 buy_rsi=30, sell_rsi=70, include_cost: bool = True) -> dict:
+        df = price_df.sort_values('date').reset_index(drop=True)
+        delta = df['close'].diff()           # 每天的漲跌幅
+        gain = delta.clip(lower=0)           # 只取漲的（跌的變 0）
+        loss = -delta.clip(upper=0)          # 只取跌的（漲的變 0）
+        avg_gain = gain.rolling(period).mean()
+        avg_loss = loss.rolling(period).mean()
+        rs = avg_gain / avg_loss
+        df['RSI'] = 100 - 100 / (1 + rs)
+        df = df.dropna().reset_index(drop=True)
+
+        holding = False
+        buy_price = 0
+        buy_date = None
+        trades = []
+
+        for i, row in df.iterrows():
+            if not holding and row['RSI'] < buy_rsi:
+                holding = True
+                buy_price = row['close']
+                buy_date = row['date']
+
+            elif holding and row['RSI'] > sell_rsi:
+                holding = False
+                sell_price = row['close']
+
+                if include_cost:
+                    cost = buy_price * (1 + self.COMMISSION_RATE)
+                    income = sell_price * (1 - self.COMMISSION_RATE - self.TAX_RATE)
+                    trade_return = (income - cost) / cost * 100
+                else:
+                    trade_return = (sell_price - buy_price) / buy_price * 100
+
+                trades.append({
+                    'buy_date': buy_date,
+                    'sell_date': row['date'],
+                    'buy_price': buy_price,
+                    'sell_price': sell_price,
+                    'return': round(trade_return, 2)
+                })
+
+        if len(trades) == 0:
+            total_return = 0
+        else:
+            total_return = sum(t['return'] for t in trades)
+
+        return {
+            'trades': trades,
+            'total_trades': len(trades),
+            'total_return': round(total_return, 2),
+            'include_cost': include_cost
+        }
+
+    def kd_strategy(self, price_df: pd.DataFrame, period=9,
+                    include_cost: bool = True) -> dict:
+        df = price_df.sort_values('date').reset_index(drop=True)
+
+        # 計算 RSV：收盤價在 9 天高低區間的位置（0~100）
+        df['lowest'] = df['min'].rolling(period).min()
+        df['highest'] = df['max'].rolling(period).max()
+        df['RSV'] = (df['close'] - df['lowest']) / (df['highest'] - df['lowest']) * 100
+
+        df = df.dropna().reset_index(drop=True)
+
+        # 計算 K 和 D（遞迴，起始值 50）
+        k_values = [50]
+        d_values = [50]
+        for i in range(len(df)):
+            rsv = df.loc[i, 'RSV']
+            k = k_values[-1] * 2/3 + rsv * 1/3
+            d = d_values[-1] * 2/3 + k * 1/3
+            k_values.append(k)
+            d_values.append(d)
+        df['K'] = k_values[1:]  
+        df['D'] = d_values[1:]
+
+        holding = False
+        buy_price = 0
+        buy_date = None
+        trades = []
+
+        for i, row in df.iterrows():
+            if i == 0:
+                continue  # 第一天沒有前一天可比較
+
+            prev_k = df.loc[i-1, 'K']
+            prev_d = df.loc[i-1, 'D']
+            curr_k = row['K']
+            curr_d = row['D']
+
+            # 黃金交叉：K 從下往上穿越 D → 買
+            if not holding and prev_k < prev_d and curr_k > curr_d:
+                holding = True
+                buy_price = row['close']
+                buy_date = row['date']
+
+            # 死亡交叉：K 從上往下穿越 D → 賣
+            elif holding and prev_k > prev_d and curr_k < curr_d:
+                holding = False
+                sell_price = row['close']
+
+                if include_cost:
+                    cost = buy_price * (1 + self.COMMISSION_RATE)
+                    income = sell_price * (1 - self.COMMISSION_RATE - self.TAX_RATE)
+                    trade_return = (income - cost) / cost * 100
+                else:
+                    trade_return = (sell_price - buy_price) / buy_price * 100
+
+                trades.append({
+                    'buy_date': buy_date,
+                    'sell_date': row['date'],
+                    'buy_price': buy_price,
+                    'sell_price': sell_price,
+                    'return': round(trade_return, 2)
+                })
+
+        if len(trades) == 0:
+            total_return = 0
+        else:
+            total_return = sum(t['return'] for t in trades)
+
+        return {
+            'trades': trades,
+            'total_trades': len(trades),
+            'total_return': round(total_return, 2),
+            'include_cost': include_cost
+        }
