@@ -50,7 +50,7 @@ class Backtester:
             "returns": round(returns, 2),  # 報酬率，保留兩位小數
             "holding_days": len(df),       # 持有天數
             "include_cost" : include_cost
-        }
+        }   
 
 
     def pe_strategy(self, price_df: pd.DataFrame, per_df: pd.DataFrame,
