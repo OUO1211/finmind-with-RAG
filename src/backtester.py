@@ -39,17 +39,24 @@ class Backtester:
             actual_buy_cost =  buy_price * (1 + self.COMMISSION_RATE)
             actual_sell_income = sell_price * ( 1 - self.COMMISSION_RATE - self.TAX_RATE)
             returns = (actual_sell_income - actual_buy_cost) / actual_buy_cost * 100
-        else: 
+        else:
             returns = (sell_price - buy_price) / buy_price * 100
+
+        # Buy and Hold 全程持有，equity curve = 股價等比例縮放
+        initial_capital = 1000000
+        shares = initial_capital / buy_price
+        equity_df = df[['date']].copy()
+        equity_df['close'] = shares * df['close']
 
         return {
             "buy_date": df.iloc[0]['date'],
             "sell_date": df.iloc[-1]['date'],
             "buy_price": buy_price,
             "sell_price": sell_price,
-            "returns": round(returns, 2),  # 報酬率，保留兩位小數
-            "holding_days": len(df),       # 持有天數
-            "include_cost" : include_cost
+            "returns": round(returns, 2),
+            "holding_days": len(df),
+            "include_cost" : include_cost,
+            "equity_curve": equity_df
         }   
 
 
@@ -76,6 +83,10 @@ class Backtester:
         buy_price = 0
         buy_date = None
         trades = []
+        initial_capital = 1000000
+        cash = initial_capital
+        shares = 0
+        equity_data = []
 
         df = pd.merge(
             price_df[['date', 'close']],
@@ -90,20 +101,19 @@ class Backtester:
             price = row['close']
             date = row['date']
 
-
             if not holding and pe < buy_pe:
-                # 沒持有 + PE 低於門檻 -> 買入
                 holding = True
                 buy_price = price
                 buy_date = date
+                shares = cash / price
+                cash = 0
 
-            
             elif holding and pe > sell_pe:
-                # 持有中 + PE 高於門檻 → 賣出
                 holding = False
                 sell_price = price
+                cash = shares * price
+                shares = 0
 
-                # 計算這筆交易的報酬
                 if include_cost:
                     cost = buy_price * (1 + self.COMMISSION_RATE)
                     income = sell_price * (1 - self.COMMISSION_RATE - self.TAX_RATE)
@@ -111,14 +121,18 @@ class Backtester:
                 else:
                     trade_return = (sell_price - buy_price) / buy_price * 100
 
-
                 trades.append({
-                                'buy_date': buy_date,
-                                'sell_date': date,
-                                'buy_price': buy_price,
-                                'sell_price': sell_price,
-                                'return': round(trade_return, 2)
-                        })
+                    'buy_date': buy_date,
+                    'sell_date': date,
+                    'buy_price': buy_price,
+                    'sell_price': sell_price,
+                    'return': round(trade_return, 2)
+                })
+
+            portfolio_value = cash + shares * price
+            equity_data.append({'date': date, 'close': portfolio_value})
+
+        equity_df = pd.DataFrame(equity_data)
 
         if len(trades) == 0:
             total_return = 0
@@ -129,7 +143,8 @@ class Backtester:
             'trades': trades,
             'total_trades': len(trades),
             'total_return': round(total_return, 2),
-            'include_cost': include_cost
+            'include_cost': include_cost,
+            'equity_curve': equity_df
         }
         
 
@@ -147,15 +162,23 @@ class Backtester:
         buy_price = 0
         buy_date = None
         trades = []
+        initial_capital = 1000000
+        cash = initial_capital
+        shares = 0
+        equity_data = []
 
         for i, row in df.iterrows():
             if not holding and row['short_ma'] > row['long_ma']:
                 holding = True
+                shares = cash / row['close']
+                cash = 0
                 buy_price = row['close']
                 buy_date = row['date']
 
             elif holding and row['short_ma'] < row['long_ma']:
                 holding = False
+                cash = shares * row['close']
+                shares = 0
                 sell_price = row['close']
 
                 if include_cost:
@@ -166,13 +189,17 @@ class Backtester:
                     trade_return = (sell_price - buy_price) / buy_price * 100
 
                 trades.append({
-                            'buy_date': buy_date,
-                            'sell_date': row['date'],
-                            'buy_price': buy_price,
-                            'sell_price': sell_price,
-                            'return': round(trade_return, 2)
-                        })
-            
+                    'buy_date': buy_date,
+                    'sell_date': row['date'],
+                    'buy_price': buy_price,
+                    'sell_price': sell_price,
+                    'return': round(trade_return, 2)
+                })
+
+            portfolio_value = cash + shares * row['close']
+            equity_data.append({'date': row['date'], 'close': portfolio_value})
+
+        equity_df = pd.DataFrame(equity_data)
 
         if len(trades) == 0:
             total_return = 0
@@ -183,7 +210,8 @@ class Backtester:
             'trades': trades,
             'total_trades': len(trades),
             'total_return': round(total_return, 2),
-            'include_cost': include_cost
+            'include_cost': include_cost,
+            'equity_curve': equity_df
         }
     
 
@@ -203,16 +231,24 @@ class Backtester:
         buy_price = 0
         buy_date = None
         trades = []
+        initial_capital = 1000000
+        cash = initial_capital
+        shares = 0
+        equity_data = []
 
         for i, row in df.iterrows():
             if not holding and row['RSI'] < buy_rsi:
                 holding = True
                 buy_price = row['close']
                 buy_date = row['date']
+                shares = cash / row['close']
+                cash = 0
 
             elif holding and row['RSI'] > sell_rsi:
                 holding = False
                 sell_price = row['close']
+                cash = shares * row['close']
+                shares = 0
 
                 if include_cost:
                     cost = buy_price * (1 + self.COMMISSION_RATE)
@@ -229,6 +265,11 @@ class Backtester:
                     'return': round(trade_return, 2)
                 })
 
+            portfolio_value = cash + shares * row['close']
+            equity_data.append({'date': row['date'], 'close': portfolio_value})
+
+        equity_df = pd.DataFrame(equity_data)
+
         if len(trades) == 0:
             total_return = 0
         else:
@@ -238,7 +279,8 @@ class Backtester:
             'trades': trades,
             'total_trades': len(trades),
             'total_return': round(total_return, 2),
-            'include_cost': include_cost
+            'include_cost': include_cost,
+            'equity_curve': equity_df
         }
 
     def kd_strategy(self, price_df: pd.DataFrame, period=9,
@@ -268,9 +310,14 @@ class Backtester:
         buy_price = 0
         buy_date = None
         trades = []
+        initial_capital = 1000000
+        cash = initial_capital
+        shares = 0
+        equity_data = []
 
         for i, row in df.iterrows():
             if i == 0:
+                equity_data.append({'date': row['date'], 'close': cash})
                 continue  # 第一天沒有前一天可比較
 
             prev_k = df.loc[i-1, 'K']
@@ -283,11 +330,15 @@ class Backtester:
                 holding = True
                 buy_price = row['close']
                 buy_date = row['date']
+                shares = cash / row['close']
+                cash = 0
 
             # 死亡交叉：K 從上往下穿越 D → 賣
             elif holding and prev_k > prev_d and curr_k < curr_d:
                 holding = False
                 sell_price = row['close']
+                cash = shares * row['close']
+                shares = 0
 
                 if include_cost:
                     cost = buy_price * (1 + self.COMMISSION_RATE)
@@ -304,6 +355,11 @@ class Backtester:
                     'return': round(trade_return, 2)
                 })
 
+            portfolio_value = cash + shares * row['close']
+            equity_data.append({'date': row['date'], 'close': portfolio_value})
+
+        equity_df = pd.DataFrame(equity_data)
+
         if len(trades) == 0:
             total_return = 0
         else:
@@ -313,5 +369,6 @@ class Backtester:
             'trades': trades,
             'total_trades': len(trades),
             'total_return': round(total_return, 2),
-            'include_cost': include_cost
+            'include_cost': include_cost,
+            'equity_curve': equity_df
         }
