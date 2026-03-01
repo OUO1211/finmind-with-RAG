@@ -27,3 +27,6 @@ for t in original['trades']:
 print('\n=== 停損停利交易明細 ===')
 for t in adjusted['trades']:
     print(t)
+
+print('\n=== Kelly Criterion ===')
+ratio = rm.kelly_criterion(original['trades'])

@@ -68,7 +68,7 @@ def main():
             stock_id=stock_id,
             data_type="financial_statement",
             start_date="2022-01-01",
-            end_date="2025-01-01"
+            end_date="2026-02-26"
         )
 
         all_chunks = []
@@ -85,7 +85,7 @@ def main():
             stock_id=stock_id,
             data_type="per",
             start_date="2023-01-01",
-            end_date="2024-01-01"
+            end_date="2026-02-26"
         )
         if not per_df.empty:
             per_df['date'] = pd.to_datetime(per_df['date'])  # 轉成日期格式
@@ -100,7 +100,7 @@ def main():
             stock_id=stock_id,
             data_type="balance_sheet",
             start_date="2022-01-01",
-            end_date="2025-01-01"
+            end_date="2026-02-26"
         )
         if not balance_sheet_df.empty:
             balance_sheet_chunks = text_processor.df_to_chunks(balance_sheet_df, stock_name)
@@ -125,7 +125,7 @@ def main():
             stock_id=stock_id,
             data_type="cash_flow",
             start_date="2022-01-01",
-            end_date="2025-01-01"
+            end_date="2026-02-26"
         )
         if not cash_flow_df.empty and not df.empty:
             cash_flow_chunks = text_processor.cash_flow_to_chunks(cash_flow_df, df, stock_name)

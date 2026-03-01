@@ -2,6 +2,11 @@ from src.data_service import DataService
 from src.backtester import Backtester
 
 
+
+
+
+
+
 class RiskManager:
     def __init__(self):
         self.data_service = DataService()
@@ -44,6 +49,34 @@ class RiskManager:
             'total_trades': len(adjusted_trade),
             'total_return': round(total_return, 2)
         }
+    
+    def kelly_criterion(self, trades):
+                from src.performance_analyzer import PerformanceAnalyzer
+                pa = PerformanceAnalyzer()
+                stats = pa.win_rate(trades)
+
+                p = stats['win_rate'] / 100
+                b = stats['profit_loss_ratio']
+                q = 1 - p
+
+                if b == 0:
+                    return 0
+
+                kelly = (b * p - q) / b
+                half_kelly = kelly / 2
+
+                print(f'勝率: {p*100:.1f}%')
+                print(f'盈虧比: {b:.2f}')
+                print(f'Full Kelly: {kelly*100:.1f}%')
+                print(f'Half Kelly: {half_kelly*100:.1f}%')
+
+                return round(half_kelly, 4)
+        
+    
+
+        
+
+    
 
 
         
