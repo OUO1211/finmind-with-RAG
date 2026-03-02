@@ -8,6 +8,41 @@ import pandas as pd
 
 class PerformanceAnalyzer:
 
+    def plot_performance(self, equity_df, strategy_name='Strategy'):
+        import matplotlib.pyplot as plt
+        plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei']
+        plt.rcParams['axes.unicode_minus'] = False
+
+        df = equity_df[['date', 'close']].sort_values('date').reset_index(drop=True)
+
+        # 回撤計算
+        df['peak'] = df['close'].cummax()
+        df['drawdown'] = (df['close'] - df['peak']) / df['peak'] * 100
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+
+        # 上圖：資金曲線
+        ax1.plot(df['date'], df['close'], label=strategy_name)
+        ax1.set_title(f'{strategy_name} - 資金曲線')
+        ax1.set_ylabel('股價')
+        ax1.legend()
+        ax1.grid(True)
+
+        # 下圖：回撤
+        ax2.fill_between(df['date'], df['drawdown'], 0, color='red', alpha=0.3)
+        ax2.set_title('回撤 (%)')
+        ax2.set_ylabel('回撤 %')
+        ax2.set_xlabel('日期')
+        ax2.grid(True)
+
+        ax2.tick_params(axis='x', rotation=45)
+        ax2.xaxis.set_major_locator(plt.MaxNLocator(10))
+
+        plt.tight_layout()
+        plt.show()
+
+
+
     def max_drawdown(self, price_df: pd.DataFrame) -> dict:
         df = price_df[['date', 'close']].sort_values('date').reset_index(drop=True)
         df['peak'] = df['close'].cummax()
