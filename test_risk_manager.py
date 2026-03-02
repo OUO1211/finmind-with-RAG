@@ -30,3 +30,18 @@ for t in adjusted['trades']:
 
 print('\n=== Kelly Criterion ===')
 ratio = rm.kelly_criterion(original['trades'])
+
+
+print('\n=== RSI 查詢 ===')
+stock_id = input('請輸入股票代碼：').strip()
+start_date = input('請輸入開始日期（例如 2024-01-01）：').strip()
+end_date = input('請輸入結束日期（例如 2024-12-31）：').strip()
+period = input('請輸入 RSI 週期（預設 14，按 Enter 跳過）：').strip()
+period = int(period) if period else 14
+rsi = rm.get_rsi(stock_id, start_date, end_date, period)
+
+
+print('\n=== Heat Check ===')
+result = rm.heat_check(stock_id, start_date, end_date)
+
+
