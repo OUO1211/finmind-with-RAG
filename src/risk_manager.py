@@ -161,12 +161,67 @@ class RiskManager:
         }
 
 
-        
     
+    def z_score(self, stock_id, start_date, end_date):
+        bs = self.data_service.get_data(stock_id, 'balance_sheet', start_date, end_date)
+        fs = self.data_service.get_data(stock_id, 'financial_statement', start_date, end_date)
 
+        # 取最新一季
+        latest_date = bs['date'].max()
+        bs_q = bs[bs['date'] == latest_date]
+        fs_q = fs[fs['date'] == latest_date]
+
+        def get_val(df, type_name):
+            row = df[df['type'] == type_name]
+            if row.empty:
+                return None
+            return row.iloc[0]['value']
         
 
-    
+        # 資產負債表
+        current_assets = get_val(bs_q, 'CurrentAssets')
+        current_liabilities = get_val(bs_q, 'CurrentLiabilities')
+        total_assets = get_val(bs_q, 'TotalAssets')
+        equity = get_val(bs_q, 'EquityAttributableToOwnersOfParent')
+        retained_earnings = get_val(bs_q, 'RetainedEarnings')
+
+
+        operating_income = get_val(fs_q, 'OperatingIncome')
+        revenue = get_val(fs_q, 'Revenue')
+
+        total_liabilities = total_assets - equity
+
+        # A = 營運資金 / 總資產
+        A = (current_assets - current_liabilities) / total_assets
+        # B = 保留盈餘 / 總資產（沒有就用股東權益代替）
+        B = (retained_earnings if retained_earnings else equity) / total_assets
+        # C = 營業利益 / 總資產
+        C = operating_income / total_assets
+        # D = 跳過（需要市值，資料不易取得）
+        D = 0
+        # E = 營收 / 總資產
+        E = revenue / total_assets
+
+        z = 1.2 * A + 1.4 * B + 3.3 * C + 0.6 * D + 1.0 * E
+
+
+        print(f'=== {stock_id} Altman Z-Score ===')
+        print(f'報表日期: {latest_date}')
+        print(f'A (營運資金/總資產): {A:.4f}')
+        print(f'B (保留盈餘/總資產): {B:.4f}')
+        print(f'C (營業利益/總資產): {C:.4f}')
+        print(f'E (營收/總資產): {E:.4f}')
+        print(f'Z-Score: {z:.2f}')
+
+        if z > 2.99:
+            print('判斷: 安全')
+        elif z > 1.81:
+            print('判斷: 灰色地帶（需注意）')
+        else:
+            print('判斷: 高風險')
+
+        return round(z, 2)
+
 
 
         

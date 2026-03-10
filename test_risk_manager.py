@@ -44,4 +44,8 @@ rsi = rm.get_rsi(stock_id, start_date, end_date, period)
 print('\n=== Heat Check ===')
 result = rm.heat_check(stock_id, start_date, end_date)
 
+print('\n=== Z-Score ===')
+rm.z_score(stock_id, start_date, end_date)
+
+
 
