@@ -72,9 +72,6 @@ def main():
     print("\n--- 請設定財報分析的時間範圍(結束日期 YYYY-MM-DD) ---")
     end_date = input().strip()
 
-    for s in input_ids:
-        if not s:
-            data_service.get_data(s, str, start_date, end_date)
 
     for stock in target_stocks:
         stock_id = stock["stock_id"]
