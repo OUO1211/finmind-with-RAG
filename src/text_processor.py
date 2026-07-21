@@ -50,12 +50,17 @@ class TextProcessor:
     }
 
     def _date_to_quarter(self, date_str: str) -> str:
-        """將日期字串轉換成季度格式"""
-        parts = date_str.split("-")
-        year = parts[0]
-        month = int(parts[1])
-        quarter = self.MONTH_TO_QUARTER.get(month, 1)
-        return f"{year}年第{quarter}季"
+        """將標準財報所屬日字串轉換成季度格式"""
+        try:
+            parts = date_str.split("-")
+            year = parts[0]
+            month = int(parts[1])
+            
+            # 移除 get 的預設值，若非 3, 6, 9, 12 月則引發 KeyError
+            quarter = self.MONTH_TO_QUARTER[month] 
+            return f"{year}年第{quarter}季"
+        except KeyError:
+            raise ValueError(f"不正確的財報所屬日月份: {date_str}，標準所屬日月份應為 3, 6, 9 或 12 月。")
 
     def _format_number(self, value: float, indicator_type: str) -> str:
         """格式化數字，讓大數字更易讀"""
@@ -156,25 +161,7 @@ class TextProcessor:
         return chunks
     
 
-    def _format_per_row(self, row, stock_name: str) -> str:
-        """
-        格式化單一 row 為文字
-
-        Args:
-            row: DataFrame 的一行資料（由 .apply() 傳入）
-            stock_name: 股票名稱
-
-        Returns:
-            格式化後的文字，例如 "2023年第1季 台積電(2330) 的EPS為 7.98 元。"
-        """
-       
-        # 組合股票名稱
-        if stock_name:
-            stock_str = f"{stock_name}({row['stock_id']})"
-        else:
-            stock_str = f"股票{row['stock_id']}"
-
-        return f"{row['date']}{stock_str}本益比{row['PER']}倍，殖利率{row['dividend_yield']}%，股價淨值比{row['PBR']}倍。"
+    
 
 
     def per_to_chunks(self, df: pd.DataFrame, stock_name: str = None):
@@ -183,7 +170,6 @@ class TextProcessor:
 
 
     def _calculate_growth_rates(self, df: pd.DataFrame) -> pd.DataFrame:
-
         df = df.copy()
         df['year'] = df['date'].str[:4].astype(int)
         df['month'] = df['date'].str[5:7].astype(int)
@@ -306,6 +292,13 @@ class TextProcessor:
         df['currentRatio'] = df['current_assets'] / df['current_liabilities'] * 100
         return df
     
+    def _format_per_row(self, row, stock_name: str) -> str:
+        if stock_name:
+            stock_str = f"{stock_name}({row['stock_id']})"
+        else:
+            stock_str = f"股票{row['stock_id']}"
+
+        return f"{row['date']} {stock_str} 的本益比(PER)為 {row['PER']:.2f}，股價淨值比(PBR)為 {row['PBR']:.2f}，殖利率為 {row['dividend_yield']:.2f}%。"
 
 
     def _format_debt_row(self, row, stock_name: str) -> str: 

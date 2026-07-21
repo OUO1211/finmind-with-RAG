@@ -44,7 +44,7 @@ class Backtester:
 
         # Buy and Hold 全程持有，equity curve = 股價等比例縮放
         initial_capital = 1000000
-        shares = initial_capital / buy_price
+        shares = initial_capital / (buy_price * (1 + self.COMMISSION_RATE))
         equity_df = df[['date']].copy()
         equity_df['close'] = shares * df['close']
 
@@ -94,6 +94,7 @@ class Backtester:
             on='date',
             how='inner'
         )
+        
         df = df.sort_values('date').reset_index(drop=True)
 
         for i, row in df.iterrows():

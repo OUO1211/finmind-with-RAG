@@ -43,6 +43,7 @@ class RAGService:
         Returns:
             LLM 生成的回答
         """
+
         # 1. 搜尋相關 chunks
         chunks = self.vector_store.query(question, n_results = n_results, stock_id = stock_id)
 

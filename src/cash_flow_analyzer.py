@@ -16,7 +16,12 @@ class CashFlowAnalyzer:
         ]
         filtered_df = cf_df[cf_df['type'].isin(target_types)]
         summary = filtered_df.pivot_table(index='date', columns='type', values='value')
-        summary.columns = ['營業活動（億元）', '籌資活動（億元）', '投資活動（億元）']
+        type_name_map = {
+        'CashFlowsFromOperatingActivities': '營業活動（億元）',
+        'CashProvidedByInvestingActivities': '投資活動（億元）',
+        'CashFlowsProvidedFromFinancingActivities': '籌資活動（億元）',
+    }
+        summary = summary.rename(columns=type_name_map)
         summary = summary / 1e8
         summary = summary.round(2)
         return summary
@@ -36,7 +41,12 @@ class CashFlowAnalyzer:
         summary = filtered_df.pivot_table(index='date', columns='type', values='value')
         
         # 4. 改欄位名稱
-        summary.columns = ['營業活動', '資本支出']
+        type_name_map = {
+            'CashFlowsFromOperatingActivities': '營業活動（億元）',
+            'CashProvidedByInvestingActivities': '投資活動（億元）',
+            'CashFlowsProvidedFromFinancingActivities': '籌資活動（億元）',
+        }
+        summary = summary.rename(columns=type_name_map)
         
         # 5. 計算自由現金流（營業活動 + 資本支出，因為資本支出已經是負數）
         summary['自由現金流'] = summary['營業活動'] + summary['資本支出']

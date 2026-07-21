@@ -12,13 +12,13 @@ class RiskManager:
         adjusted_trade = []
 
         for trade in original_result['trades']:
-            buy_date = trade['buy_date']
+            buy_date = trade['buy_date']    
             sell_date = trade['sell_date']
             buy_price = trade['buy_price']
 
             holding_period = price_df[
             (price_df['date'] >= buy_date) & (price_df['date'] <= sell_date)
-        ]
+            ]
             
             triggered = False
             for _, row in holding_period.iterrows():
@@ -26,7 +26,7 @@ class RiskManager:
                 if(change > take_profit or change < stop_loss):
                     new_trade = {
                         'buy_date': buy_date,
-                        'sell_date': row['date'],
+                        'sell_date': row['date'],   
                         'buy_price': buy_price,
                         'sell_price': row['close'],
                         'return': round(change, 2)

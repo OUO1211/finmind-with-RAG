@@ -29,6 +29,7 @@ class DataFetcher:
         self.token = token or os.getenv("FINMIND_TOKEN")
         self.loader = DataLoader()
 
+        
         if self.token:
             self.loader.login_by_token(api_token=self.token)
             print("[DataFetcher] 已使用 Token 登入（600次/小時）")
@@ -70,6 +71,7 @@ class DataFetcher:
                 start_date=start_date,
                 end_date=end_date
             )
+            
             if df.empty:
                 print(f"[DataFetcher] 警告：{stock_id} 股價查無資料")
             else:
@@ -181,3 +183,4 @@ class DataFetcher:
             print(f"[DataFetcher] 錯誤：獲取現金流量表失敗 - {e}")
             return pd.DataFrame()
         
+

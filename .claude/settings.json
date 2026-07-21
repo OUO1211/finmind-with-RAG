@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"c:\\\\Users\\\\USER\\\\Documents\\\\RAG\" log --oneline -20)",
+      "Bash(git -C \"c:\\\\Users\\\\USER\\\\Documents\\\\RAG\" log --oneline -30)",
+      "Bash(python -m pytest --version)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(mv pytest.ini pytest.ini.bak)",
+      "Bash(pytest tests/ -q)",
+      "Bash(python -c ' *)",
+      "Bash(python -m pytest tests/test_pe_strategy.py -v)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}

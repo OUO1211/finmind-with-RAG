@@ -11,13 +11,7 @@ FinMind RAG 財報分析系統
 - RAGService: RAG 問答服務
 """
 
-from .cache_manager import CacheManager
-from .data_fetcher import DataFetcher
-from .data_service import DataService
-from .text_processor import TextProcessor
-from .embedding_service import EmbeddingService
-from .vector_store import VectorStore
-from .rag_service import RAGService
+from importlib import import_module
 
 __all__ = [
     "CacheManager",
@@ -28,3 +22,21 @@ __all__ = [
     "VectorStore",
     "RAGService",
 ]
+
+_MODULE_BY_NAME = {
+    "CacheManager": "cache_manager",
+    "DataFetcher": "data_fetcher",
+    "DataService": "data_service",
+    "TextProcessor": "text_processor",
+    "EmbeddingService": "embedding_service",
+    "VectorStore": "vector_store",
+    "RAGService": "rag_service",
+}
+
+
+def __getattr__(name):
+    module_name = _MODULE_BY_NAME.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = import_module(f".{module_name}", __name__)
+    return getattr(module, name)
