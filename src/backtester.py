@@ -89,30 +89,35 @@ class Backtester:
         equity_data = []
 
         df = pd.merge(
-            price_df[['date', 'close']],
+            price_df[['date', 'open', 'close']],
             per_df[['date', 'PER']],
             on='date',
             how='inner'
         )
-        
+
         df = df.sort_values('date').reset_index(drop=True)
 
+        # 訊號與執行分離：見 ma_strategy 的說明，這裡同樣套用
+        buy_signal = df['PER'] < buy_pe
+        sell_signal = df['PER'] > sell_pe
+        df['execute_buy'] = buy_signal.shift(1, fill_value=False)
+        df['execute_sell'] = sell_signal.shift(1, fill_value=False)
+
         for i, row in df.iterrows():
-            pe = row['PER']
             price = row['close']
             date = row['date']
 
-            if not holding and pe < buy_pe:
+            if not holding and row['execute_buy']:
                 holding = True
-                buy_price = price
+                buy_price = row['open']
                 buy_date = date
-                shares = cash / price
+                shares = cash / row['open']
                 cash = 0
 
-            elif holding and pe > sell_pe:
+            elif holding and row['execute_sell']:
                 holding = False
-                sell_price = price
-                cash = shares * price
+                sell_price = row['open']
+                cash = shares * row['open']
                 shares = 0
 
                 if include_cost:
@@ -153,11 +158,22 @@ class Backtester:
 
     def ma_strategy(self, price_df: pd.DataFrame, short_window = 5, long_window = 20
                     ,include_cost: bool = True) -> dict:
-        
+
         df = price_df.sort_values('date').reset_index(drop=True)
         df['short_ma'] = df['close'].rolling(short_window).mean()
         df['long_ma'] = df['close'].rolling(long_window).mean()
         df = df.dropna().reset_index(drop=True)
+
+        # 訊號與執行分離：訊號用「當天收盤」算出來（向量化，不用等迴圈跑到那一列），
+        # 但 .shift(1) 把整欄往下移一格，讓「今天」這一列看到的是「昨天」算出的
+        # 訊號——對應真實世界「收盤後才知道訊號、最早只能隔天開盤成交」的限制。
+        # 第一列位移後沒有「昨天」可參考，用 fill_value=False 代表當天不執行
+        # （直接讓 shift 補值，型別維持 bool，不會像 shift 後再 fillna 那樣
+        # 中間產生 NaN 導致整欄被降級成 object dtype）。
+        buy_signal = df['short_ma'] > df['long_ma']
+        sell_signal = df['short_ma'] < df['long_ma']
+        df['execute_buy'] = buy_signal.shift(1, fill_value=False)
+        df['execute_sell'] = sell_signal.shift(1, fill_value=False)
 
         holding = False
         buy_price = 0
@@ -169,18 +185,18 @@ class Backtester:
         equity_data = []
 
         for i, row in df.iterrows():
-            if not holding and row['short_ma'] > row['long_ma']:
+            if not holding and row['execute_buy']:
                 holding = True
-                shares = cash / row['close']
+                shares = cash / row['open']
                 cash = 0
-                buy_price = row['close']
+                buy_price = row['open']
                 buy_date = row['date']
 
-            elif holding and row['short_ma'] < row['long_ma']:
+            elif holding and row['execute_sell']:
                 holding = False
-                cash = shares * row['close']
+                cash = shares * row['open']
                 shares = 0
-                sell_price = row['close']
+                sell_price = row['open']
 
                 if include_cost:
                     cost = buy_price * (1 + self.COMMISSION_RATE)
@@ -228,6 +244,12 @@ class Backtester:
         df['RSI'] = 100 - 100 / (1 + rs)
         df = df.dropna().reset_index(drop=True)
 
+        # 訊號與執行分離：見 ma_strategy 的說明，這裡同樣套用
+        buy_signal = df['RSI'] < buy_rsi
+        sell_signal = df['RSI'] > sell_rsi
+        df['execute_buy'] = buy_signal.shift(1, fill_value=False)
+        df['execute_sell'] = sell_signal.shift(1, fill_value=False)
+
         holding = False
         buy_price = 0
         buy_date = None
@@ -238,17 +260,17 @@ class Backtester:
         equity_data = []
 
         for i, row in df.iterrows():
-            if not holding and row['RSI'] < buy_rsi:
+            if not holding and row['execute_buy']:
                 holding = True
-                buy_price = row['close']
+                buy_price = row['open']
                 buy_date = row['date']
-                shares = cash / row['close']
+                shares = cash / row['open']
                 cash = 0
 
-            elif holding and row['RSI'] > sell_rsi:
+            elif holding and row['execute_sell']:
                 holding = False
-                sell_price = row['close']
-                cash = shares * row['close']
+                sell_price = row['open']
+                cash = shares * row['open']
                 shares = 0
 
                 if include_cost:
@@ -304,8 +326,20 @@ class Backtester:
             d = d_values[-1] * 2/3 + k * 1/3
             k_values.append(k)
             d_values.append(d)
-        df['K'] = k_values[1:]  
+        df['K'] = k_values[1:]
         df['D'] = d_values[1:]
+
+        # 黃金/死亡交叉本身就要比較「昨天」跟「今天」的 K/D，用 .shift(1) 先把
+        # 「昨天的 K/D」攤平成獨立欄位，向量化算出交叉訊號（不用在迴圈裡查
+        # df.loc[i-1, ...]）。算出交叉訊號後，再用 .shift(1) 做「訊號與執行分離」
+        # （見 ma_strategy 說明）——這裡等於位移了兩次：第一次是交叉判斷本身需要
+        # 的「昨天 vs 今天」比較，第二次是「今天判斷出訊號、隔天才能執行」。
+        prev_k = df['K'].shift(1)
+        prev_d = df['D'].shift(1)
+        buy_signal = (prev_k < prev_d) & (df['K'] > df['D'])
+        sell_signal = (prev_k > prev_d) & (df['K'] < df['D'])
+        df['execute_buy'] = buy_signal.shift(1, fill_value=False)
+        df['execute_sell'] = sell_signal.shift(1, fill_value=False)
 
         holding = False
         buy_price = 0
@@ -317,28 +351,19 @@ class Backtester:
         equity_data = []
 
         for i, row in df.iterrows():
-            if i == 0:
-                equity_data.append({'date': row['date'], 'close': cash})
-                continue  # 第一天沒有前一天可比較
-
-            prev_k = df.loc[i-1, 'K']
-            prev_d = df.loc[i-1, 'D']
-            curr_k = row['K']
-            curr_d = row['D']
-
             # 黃金交叉：K 從下往上穿越 D → 買
-            if not holding and prev_k < prev_d and curr_k > curr_d:
+            if not holding and row['execute_buy']:
                 holding = True
-                buy_price = row['close']
+                buy_price = row['open']
                 buy_date = row['date']
-                shares = cash / row['close']
+                shares = cash / row['open']
                 cash = 0
 
             # 死亡交叉：K 從上往下穿越 D → 賣
-            elif holding and prev_k > prev_d and curr_k < curr_d:
+            elif holding and row['execute_sell']:
                 holding = False
-                sell_price = row['close']
-                cash = shares * row['close']
+                sell_price = row['open']
+                cash = shares * row['open']
                 shares = 0
 
                 if include_cost:
