@@ -18,6 +18,48 @@ class Backtester:
 
     COMMISSION_RATE = 0.001425
     TAX_RATE = 0.003    
+    # 預設維持舊回測結果；啟用後可用固定比例模擬每一邊的委託衝擊。
+    # 例如 slippage_rate=0.001 時，市價買入 100 元會以 100.10 元成交。
+    DEFAULT_SLIPPAGE_RATE = 0.0
+
+    def __init__(self, slippage_rate: float = DEFAULT_SLIPPAGE_RATE):
+        if slippage_rate < 0:
+            raise ValueError("slippage_rate must be non-negative")
+        self.slippage_rate = slippage_rate
+
+    def _fill_price(self, market_price: float, side: str, include_cost: bool) -> float:
+        """Return the adverse fill price for a buy or sell order."""
+        if not include_cost:
+            return market_price
+        if side == 'buy':
+            return market_price * (1 + self.slippage_rate)
+        if side == 'sell':
+            return market_price * (1 - self.slippage_rate)
+        raise ValueError("side must be 'buy' or 'sell'")
+
+    def _buy_cash_per_share(self, market_price: float, include_cost: bool) -> float:
+        fill_price = self._fill_price(market_price, 'buy', include_cost)
+        return fill_price * (1 + self.COMMISSION_RATE) if include_cost else fill_price
+
+    def _sell_cash_per_share(self, market_price: float, include_cost: bool) -> float:
+        fill_price = self._fill_price(market_price, 'sell', include_cost)
+        return fill_price * (1 - self.COMMISSION_RATE - self.TAX_RATE) if include_cost else fill_price
+
+    def _trade_return(self, buy_price: float, sell_price: float, include_cost: bool) -> float:
+        cost = self._buy_cash_per_share(buy_price, include_cost)
+        income = self._sell_cash_per_share(sell_price, include_cost)
+        return (income - cost) / cost * 100
+
+    def _position_shares(self, cash: float, market_price: float, include_cost: bool) -> float:
+        """Keep legacy equity curves unchanged until slippage is explicitly enabled."""
+        if not include_cost or self.slippage_rate == 0:
+            return cash / market_price
+        return cash / self._buy_cash_per_share(market_price, include_cost)
+
+    def _liquidation_cash(self, shares: float, market_price: float, include_cost: bool) -> float:
+        if not include_cost or self.slippage_rate == 0:
+            return shares * market_price
+        return shares * self._sell_cash_per_share(market_price, include_cost)
 
     def buy_and_hold(self, price_df: pd.DataFrame, include_cost: bool = True) -> dict:
         """
@@ -35,16 +77,11 @@ class Backtester:
         buy_price = df.iloc[0]['close']    # iloc[0] = 第一筆
         sell_price = df.iloc[-1]['close']  # iloc[-1] = 最後一筆
 
-        if include_cost:
-            actual_buy_cost =  buy_price * (1 + self.COMMISSION_RATE)
-            actual_sell_income = sell_price * ( 1 - self.COMMISSION_RATE - self.TAX_RATE)
-            returns = (actual_sell_income - actual_buy_cost) / actual_buy_cost * 100
-        else:
-            returns = (sell_price - buy_price) / buy_price * 100
+        returns = self._trade_return(buy_price, sell_price, include_cost)
 
         # Buy and Hold 全程持有，equity curve = 股價等比例縮放
         initial_capital = 1000000
-        shares = initial_capital / (buy_price * (1 + self.COMMISSION_RATE))
+        shares = initial_capital / self._buy_cash_per_share(buy_price, include_cost)
         equity_df = df[['date']].copy()
         equity_df['close'] = shares * df['close']
 
@@ -56,6 +93,7 @@ class Backtester:
             "returns": round(returns, 2),
             "holding_days": len(df),
             "include_cost" : include_cost,
+            "slippage_rate": self.slippage_rate if include_cost else 0.0,
             "equity_curve": equity_df
         }   
 
@@ -111,27 +149,24 @@ class Backtester:
                 holding = True
                 buy_price = row['open']
                 buy_date = date
-                shares = cash / row['open']
+                shares = self._position_shares(cash, buy_price, include_cost)
                 cash = 0
 
             elif holding and row['execute_sell']:
                 holding = False
                 sell_price = row['open']
-                cash = shares * row['open']
+                cash = self._liquidation_cash(shares, sell_price, include_cost)
                 shares = 0
 
-                if include_cost:
-                    cost = buy_price * (1 + self.COMMISSION_RATE)
-                    income = sell_price * (1 - self.COMMISSION_RATE - self.TAX_RATE)
-                    trade_return = (income - cost) / cost * 100
-                else:
-                    trade_return = (sell_price - buy_price) / buy_price * 100
+                trade_return = self._trade_return(buy_price, sell_price, include_cost)
 
                 trades.append({
                     'buy_date': buy_date,
                     'sell_date': date,
                     'buy_price': buy_price,
                     'sell_price': sell_price,
+                    'buy_fill_price': self._fill_price(buy_price, 'buy', include_cost),
+                    'sell_fill_price': self._fill_price(sell_price, 'sell', include_cost),
                     'return': round(trade_return, 2)
                 })
 
@@ -150,6 +185,7 @@ class Backtester:
             'total_trades': len(trades),
             'total_return': round(total_return, 2),
             'include_cost': include_cost,
+            'slippage_rate': self.slippage_rate if include_cost else 0.0,
             'equity_curve': equity_df
         }
         
@@ -187,29 +223,26 @@ class Backtester:
         for i, row in df.iterrows():
             if not holding and row['execute_buy']:
                 holding = True
-                shares = cash / row['open']
+                shares = self._position_shares(cash, row['open'], include_cost)
                 cash = 0
                 buy_price = row['open']
                 buy_date = row['date']
 
             elif holding and row['execute_sell']:
                 holding = False
-                cash = shares * row['open']
+                cash = self._liquidation_cash(shares, row['open'], include_cost)
                 shares = 0
                 sell_price = row['open']
 
-                if include_cost:
-                    cost = buy_price * (1 + self.COMMISSION_RATE)
-                    income = sell_price * (1 - self.COMMISSION_RATE - self.TAX_RATE)
-                    trade_return = (income - cost) / cost * 100
-                else:
-                    trade_return = (sell_price - buy_price) / buy_price * 100
+                trade_return = self._trade_return(buy_price, sell_price, include_cost)
 
                 trades.append({
                     'buy_date': buy_date,
                     'sell_date': row['date'],
                     'buy_price': buy_price,
                     'sell_price': sell_price,
+                    'buy_fill_price': self._fill_price(buy_price, 'buy', include_cost),
+                    'sell_fill_price': self._fill_price(sell_price, 'sell', include_cost),
                     'return': round(trade_return, 2)
                 })
 
@@ -228,6 +261,7 @@ class Backtester:
             'total_trades': len(trades),
             'total_return': round(total_return, 2),
             'include_cost': include_cost,
+            'slippage_rate': self.slippage_rate if include_cost else 0.0,
             'equity_curve': equity_df
         }
     
@@ -264,27 +298,24 @@ class Backtester:
                 holding = True
                 buy_price = row['open']
                 buy_date = row['date']
-                shares = cash / row['open']
+                shares = self._position_shares(cash, buy_price, include_cost)
                 cash = 0
 
             elif holding and row['execute_sell']:
                 holding = False
                 sell_price = row['open']
-                cash = shares * row['open']
+                cash = self._liquidation_cash(shares, sell_price, include_cost)
                 shares = 0
 
-                if include_cost:
-                    cost = buy_price * (1 + self.COMMISSION_RATE)
-                    income = sell_price * (1 - self.COMMISSION_RATE - self.TAX_RATE)
-                    trade_return = (income - cost) / cost * 100
-                else:
-                    trade_return = (sell_price - buy_price) / buy_price * 100
+                trade_return = self._trade_return(buy_price, sell_price, include_cost)
 
                 trades.append({
                     'buy_date': buy_date,
                     'sell_date': row['date'],
                     'buy_price': buy_price,
                     'sell_price': sell_price,
+                    'buy_fill_price': self._fill_price(buy_price, 'buy', include_cost),
+                    'sell_fill_price': self._fill_price(sell_price, 'sell', include_cost),
                     'return': round(trade_return, 2)
                 })
 
@@ -303,6 +334,7 @@ class Backtester:
             'total_trades': len(trades),
             'total_return': round(total_return, 2),
             'include_cost': include_cost,
+            'slippage_rate': self.slippage_rate if include_cost else 0.0,
             'equity_curve': equity_df
         }
 
@@ -356,28 +388,25 @@ class Backtester:
                 holding = True
                 buy_price = row['open']
                 buy_date = row['date']
-                shares = cash / row['open']
+                shares = self._position_shares(cash, buy_price, include_cost)
                 cash = 0
 
             # 死亡交叉：K 從上往下穿越 D → 賣
             elif holding and row['execute_sell']:
                 holding = False
                 sell_price = row['open']
-                cash = shares * row['open']
+                cash = self._liquidation_cash(shares, sell_price, include_cost)
                 shares = 0
 
-                if include_cost:
-                    cost = buy_price * (1 + self.COMMISSION_RATE)
-                    income = sell_price * (1 - self.COMMISSION_RATE - self.TAX_RATE)
-                    trade_return = (income - cost) / cost * 100
-                else:
-                    trade_return = (sell_price - buy_price) / buy_price * 100
+                trade_return = self._trade_return(buy_price, sell_price, include_cost)
 
                 trades.append({
                     'buy_date': buy_date,
                     'sell_date': row['date'],
                     'buy_price': buy_price,
                     'sell_price': sell_price,
+                    'buy_fill_price': self._fill_price(buy_price, 'buy', include_cost),
+                    'sell_fill_price': self._fill_price(sell_price, 'sell', include_cost),
                     'return': round(trade_return, 2)
                 })
 
@@ -396,5 +425,6 @@ class Backtester:
             'total_trades': len(trades),
             'total_return': round(total_return, 2),
             'include_cost': include_cost,
+            'slippage_rate': self.slippage_rate if include_cost else 0.0,
             'equity_curve': equity_df
         }
