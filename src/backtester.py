@@ -22,10 +22,17 @@ class Backtester:
     # 例如 slippage_rate=0.001 時，市價買入 100 元會以 100.10 元成交。
     DEFAULT_SLIPPAGE_RATE = 0.0
 
-    def __init__(self, slippage_rate: float = DEFAULT_SLIPPAGE_RATE):
+    def __init__(
+        self,
+        slippage_rate: float = DEFAULT_SLIPPAGE_RATE,
+        position_size: float = 1.0,
+    ):
         if slippage_rate < 0:
             raise ValueError("slippage_rate must be non-negative")
+        if not 0 < position_size <= 1:
+            raise ValueError("position_size must be greater than 0 and at most 1")
         self.slippage_rate = slippage_rate
+        self.position_size = position_size
 
     def _fill_price(self, market_price: float, side: str, include_cost: bool) -> float:
         """Return the adverse fill price for a buy or sell order."""
@@ -55,6 +62,14 @@ class Backtester:
         if not include_cost or self.slippage_rate == 0:
             return cash / market_price
         return cash / self._buy_cash_per_share(market_price, include_cost)
+
+    def _open_position(
+        self, cash: float, market_price: float, include_cost: bool
+    ) -> tuple[float, float]:
+        """以設定的部位比例買進，回傳買入股數與剩餘現金。"""
+        capital_used = cash * self.position_size
+        shares = self._position_shares(capital_used, market_price, include_cost)
+        return shares, cash - capital_used
 
     def _liquidation_cash(self, shares: float, market_price: float, include_cost: bool) -> float:
         if not include_cost or self.slippage_rate == 0:
@@ -97,6 +112,140 @@ class Backtester:
             "equity_curve": equity_df
         }   
 
+    def equal_weight_strategy(
+        self,
+        stock_data: dict[str, pd.DataFrame],
+        *,
+        max_positions: int = 5,
+        include_cost: bool = True,
+        initial_capital: float = 1_000_000,
+    ) -> dict:
+        """Backtest several stocks with a simple equal-weight position limit.
+
+        Each input frame must contain ``date``, ``open``, ``close``,
+        ``buy_signal`` and ``sell_signal``.  Signals are decided at the close
+        and executed at the following available market open.  The available
+        cash is divided equally among the vacant slots, up to
+        ``max_positions``; existing positions are never rebalanced.
+        """
+        if (isinstance(max_positions, bool) or not isinstance(max_positions, int)
+                or max_positions <= 0):
+            raise ValueError("max_positions must be a positive integer")
+        if initial_capital <= 0:
+            raise ValueError("initial_capital must be greater than 0")
+        if not stock_data:
+            raise ValueError("stock_data must contain at least one stock")
+
+        # 將每檔資料整理成「交易日 -> 股票代號 -> 當日資料」的查詢結構。
+        required_columns = {"date", "open", "close", "buy_signal", "sell_signal"}
+        daily_rows: dict[pd.Timestamp, dict[str, pd.Series]] = {}
+        for code, source in stock_data.items():
+            # 確認每檔股票都有產生訊號與估值所需的價格欄位。
+            missing = required_columns.difference(source.columns)
+            if missing:
+                names = ", ".join(sorted(missing))
+                raise ValueError(f"stock_data[{code!r}] is missing required columns: {names}")
+
+            # 排好時間順序，並把收盤訊號延後一天成為實際開盤委託。
+            frame = source.copy()
+            frame["date"] = pd.to_datetime(frame["date"])
+            frame = frame.sort_values("date").drop_duplicates("date", keep="last")
+            buy_signal = frame["buy_signal"].fillna(False).astype(bool)
+            sell_signal = frame["sell_signal"].fillna(False).astype(bool)
+            frame["execute_buy"] = buy_signal.shift(1, fill_value=False)
+            frame["execute_sell"] = sell_signal.shift(1, fill_value=False)
+            # 收集所有股票每天的資料，之後以時間順序統一撮合。
+            for _, row in frame.iterrows():
+                daily_rows.setdefault(row["date"], {})[str(code)] = row
+
+        # 初始化投資組合帳戶、持倉、最新收盤價與回測輸出資料。
+        cash = float(initial_capital)
+        # 目前持倉：以股票代號為 key，value 記錄該筆部位的買進資訊。
+        # 例如 holdings["2330"]["shares"] 即為台積電目前持有股數；
+        # 賣出時會取出並從此字典移除，藉此限制同時持倉數。
+        holdings: dict[str, dict] = {}
+        last_close: dict[str, float] = {}
+        trades = []
+        equity_data = []
+
+        # 逐一處理每個交易日：先賣、再買，最後以收盤價更新資產淨值。
+        for date in sorted(daily_rows):
+            rows = daily_rows[date]
+
+            # Sell before buying so a freed slot and its cash can be reused
+            # at this same open.  Sorting makes simultaneous signals stable.
+            for code in sorted(set(holdings).intersection(rows)):
+                row = rows[code]
+                if not row["execute_sell"]:
+                    continue
+                position = holdings.pop(code)
+                sell_price = float(row["open"])
+                proceeds = position["shares"] * self._sell_cash_per_share(
+                    sell_price, include_cost
+                )
+                cash += proceeds
+                trades.append({
+                    "code": code,
+                    "buy_date": position["buy_date"],
+                    "sell_date": date,
+                    "buy_price": position["buy_price"],
+                    "sell_price": sell_price,
+                    "buy_fill_price": position["buy_fill_price"],
+                    "sell_fill_price": self._fill_price(sell_price, "sell", include_cost),
+                    "shares": position["shares"],
+                    "capital_used": position["capital_used"],
+                    "return": round((proceeds - position["capital_used"])
+                                    / position["capital_used"] * 100, 2),
+                })
+
+            # 只從尚未持有且當日需要買進的股票中挑選新部位。
+            candidates = [
+                code for code in sorted(rows)
+                if code not in holdings and bool(rows[code]["execute_buy"])
+            ]
+            for code in candidates:
+                # 將可動用現金均分至所有剩餘空缺，形成等權重的新進場部位。
+                vacant_slots = max_positions - len(holdings)
+                if vacant_slots == 0:
+                    break
+                capital_used = cash / vacant_slots
+                buy_price = float(rows[code]["open"])
+                buy_cash_per_share = self._buy_cash_per_share(buy_price, include_cost)
+                shares = capital_used / buy_cash_per_share
+                cash -= capital_used
+                holdings[code] = {
+                    "buy_date": date,
+                    "buy_price": buy_price,
+                    "buy_fill_price": self._fill_price(buy_price, "buy", include_cost),
+                    "shares": shares,
+                    "capital_used": capital_used,
+                }
+
+            # 沒有交易的持倉仍按最後可取得的收盤價估值，產生每日資金曲線。
+            last_close.update({code: float(row["close"]) for code, row in rows.items()})
+            portfolio_value = cash + sum(
+                position["shares"] * last_close[code]
+                for code, position in holdings.items()
+            )
+            equity_data.append({"date": date, "close": portfolio_value})
+
+        if not equity_data:
+            raise ValueError("stock_data must contain at least one price row")
+        equity_df = pd.DataFrame(equity_data)
+        # 彙整交易紀錄、未平倉部位與以整體資產淨值計算的總報酬。
+        final_value = equity_df.iloc[-1]["close"]
+        return {
+            "trades": trades,
+            "total_trades": len(trades),
+            "total_return": round((final_value / initial_capital - 1) * 100, 2),
+            "include_cost": include_cost,
+            "slippage_rate": self.slippage_rate if include_cost else 0.0,
+            "max_positions": max_positions,
+            "target_weight": 1 / max_positions,
+            "open_positions": sorted(holdings),
+            "equity_curve": equity_df,
+        }
+
 
     def pe_strategy(self, price_df: pd.DataFrame, per_df: pd.DataFrame,
                      buy_pe=15, sell_pe=25, include_cost: bool = True) -> dict:
@@ -124,6 +273,7 @@ class Backtester:
         initial_capital = 1000000
         cash = initial_capital
         shares = 0
+        capital_used = 0
         equity_data = []
 
         df = pd.merge(
@@ -149,13 +299,14 @@ class Backtester:
                 holding = True
                 buy_price = row['open']
                 buy_date = date
-                shares = self._position_shares(cash, buy_price, include_cost)
-                cash = 0
+                capital_used = cash * self.position_size
+                shares, cash = self._open_position(cash, buy_price, include_cost)
 
             elif holding and row['execute_sell']:
                 holding = False
                 sell_price = row['open']
-                cash = self._liquidation_cash(shares, sell_price, include_cost)
+                sold_shares = shares
+                cash += self._liquidation_cash(sold_shares, sell_price, include_cost)
                 shares = 0
 
                 trade_return = self._trade_return(buy_price, sell_price, include_cost)
@@ -167,6 +318,9 @@ class Backtester:
                     'sell_price': sell_price,
                     'buy_fill_price': self._fill_price(buy_price, 'buy', include_cost),
                     'sell_fill_price': self._fill_price(sell_price, 'sell', include_cost),
+                    'shares': sold_shares,
+                    'position_size': self.position_size,
+                    'capital_used': capital_used,
                     'return': round(trade_return, 2)
                 })
 
@@ -186,6 +340,7 @@ class Backtester:
             'total_return': round(total_return, 2),
             'include_cost': include_cost,
             'slippage_rate': self.slippage_rate if include_cost else 0.0,
+            'position_size': self.position_size,
             'equity_curve': equity_df
         }
         
@@ -218,19 +373,21 @@ class Backtester:
         initial_capital = 1000000
         cash = initial_capital
         shares = 0
+        capital_used = 0
         equity_data = []
 
         for i, row in df.iterrows():
             if not holding and row['execute_buy']:
                 holding = True
-                shares = self._position_shares(cash, row['open'], include_cost)
-                cash = 0
+                capital_used = cash * self.position_size
+                shares, cash = self._open_position(cash, row['open'], include_cost)
                 buy_price = row['open']
                 buy_date = row['date']
 
             elif holding and row['execute_sell']:
                 holding = False
-                cash = self._liquidation_cash(shares, row['open'], include_cost)
+                sold_shares = shares
+                cash += self._liquidation_cash(sold_shares, row['open'], include_cost)
                 shares = 0
                 sell_price = row['open']
 
@@ -243,6 +400,9 @@ class Backtester:
                     'sell_price': sell_price,
                     'buy_fill_price': self._fill_price(buy_price, 'buy', include_cost),
                     'sell_fill_price': self._fill_price(sell_price, 'sell', include_cost),
+                    'shares': sold_shares,
+                    'position_size': self.position_size,
+                    'capital_used': capital_used,
                     'return': round(trade_return, 2)
                 })
 
@@ -262,6 +422,7 @@ class Backtester:
             'total_return': round(total_return, 2),
             'include_cost': include_cost,
             'slippage_rate': self.slippage_rate if include_cost else 0.0,
+            'position_size': self.position_size,
             'equity_curve': equity_df
         }
     
@@ -291,6 +452,7 @@ class Backtester:
         initial_capital = 1000000
         cash = initial_capital
         shares = 0
+        capital_used = 0
         equity_data = []
 
         for i, row in df.iterrows():
@@ -298,13 +460,14 @@ class Backtester:
                 holding = True
                 buy_price = row['open']
                 buy_date = row['date']
-                shares = self._position_shares(cash, buy_price, include_cost)
-                cash = 0
+                capital_used = cash * self.position_size
+                shares, cash = self._open_position(cash, buy_price, include_cost)
 
             elif holding and row['execute_sell']:
                 holding = False
                 sell_price = row['open']
-                cash = self._liquidation_cash(shares, sell_price, include_cost)
+                sold_shares = shares
+                cash += self._liquidation_cash(sold_shares, sell_price, include_cost)
                 shares = 0
 
                 trade_return = self._trade_return(buy_price, sell_price, include_cost)
@@ -316,6 +479,9 @@ class Backtester:
                     'sell_price': sell_price,
                     'buy_fill_price': self._fill_price(buy_price, 'buy', include_cost),
                     'sell_fill_price': self._fill_price(sell_price, 'sell', include_cost),
+                    'shares': sold_shares,
+                    'position_size': self.position_size,
+                    'capital_used': capital_used,
                     'return': round(trade_return, 2)
                 })
 
@@ -335,6 +501,7 @@ class Backtester:
             'total_return': round(total_return, 2),
             'include_cost': include_cost,
             'slippage_rate': self.slippage_rate if include_cost else 0.0,
+            'position_size': self.position_size,
             'equity_curve': equity_df
         }
 
@@ -380,6 +547,7 @@ class Backtester:
         initial_capital = 1000000
         cash = initial_capital
         shares = 0
+        capital_used = 0
         equity_data = []
 
         for i, row in df.iterrows():
@@ -388,14 +556,15 @@ class Backtester:
                 holding = True
                 buy_price = row['open']
                 buy_date = row['date']
-                shares = self._position_shares(cash, buy_price, include_cost)
-                cash = 0
+                capital_used = cash * self.position_size
+                shares, cash = self._open_position(cash, buy_price, include_cost)
 
             # 死亡交叉：K 從上往下穿越 D → 賣
             elif holding and row['execute_sell']:
                 holding = False
                 sell_price = row['open']
-                cash = self._liquidation_cash(shares, sell_price, include_cost)
+                sold_shares = shares
+                cash += self._liquidation_cash(sold_shares, sell_price, include_cost)
                 shares = 0
 
                 trade_return = self._trade_return(buy_price, sell_price, include_cost)
@@ -407,6 +576,9 @@ class Backtester:
                     'sell_price': sell_price,
                     'buy_fill_price': self._fill_price(buy_price, 'buy', include_cost),
                     'sell_fill_price': self._fill_price(sell_price, 'sell', include_cost),
+                    'shares': sold_shares,
+                    'position_size': self.position_size,
+                    'capital_used': capital_used,
                     'return': round(trade_return, 2)
                 })
 
@@ -426,5 +598,6 @@ class Backtester:
             'total_return': round(total_return, 2),
             'include_cost': include_cost,
             'slippage_rate': self.slippage_rate if include_cost else 0.0,
+            'position_size': self.position_size,
             'equity_curve': equity_df
         }
