@@ -21,6 +21,7 @@ __all__ = [
     "EmbeddingService",
     "VectorStore",
     "RAGService",
+    "OutOfSampleValidator",
 ]
 
 _MODULE_BY_NAME = {
@@ -31,6 +32,7 @@ _MODULE_BY_NAME = {
     "EmbeddingService": "embedding_service",
     "VectorStore": "vector_store",
     "RAGService": "rag_service",
+    "OutOfSampleValidator": "out_of_sample",
 }
 
 
