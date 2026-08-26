@@ -92,7 +92,7 @@ def test_kd_strategy_still_holding_produces_no_trade(backtester, price_df):
     assert result['total_trades'] == 0
     assert result['trades'] == []
     # 用 equity_curve 確認買進真的執行了（01-07 開盤價 89 買進）
-    shares = 1_000_000 / 89
+    shares = 1_000_000 / (89 * (1 + Backtester.COMMISSION_RATE))
     assert result['equity_curve'].iloc[4]['close'] == pytest.approx(shares * 90)
 
 
@@ -118,8 +118,9 @@ def test_kd_strategy_equity_curve(backtester, price_df):
     assert equity_curve.iloc[0]['close'] == 1_000_000
     assert equity_curve.iloc[3]['close'] == 1_000_000
     # 01-07 以開盤價 89 買進，equity 用當天收盤價 90 估市值
-    shares = 1_000_000 / 89
+    shares = 1_000_000 / (89 * (1 + Backtester.COMMISSION_RATE))
     assert equity_curve.iloc[4]['close'] == pytest.approx(shares * 90)
     # 01-12 賣出後（開盤價 94），資金維持在賣出當下的市值
-    assert equity_curve.iloc[9]['close'] == pytest.approx(shares * 94)
-    assert equity_curve.iloc[10]['close'] == pytest.approx(shares * 94)
+    sale_value = shares * 94 * (1 - Backtester.COMMISSION_RATE - Backtester.TAX_RATE)
+    assert equity_curve.iloc[9]['close'] == pytest.approx(sale_value)
+    assert equity_curve.iloc[10]['close'] == pytest.approx(sale_value)

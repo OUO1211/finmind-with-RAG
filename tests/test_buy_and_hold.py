@@ -79,7 +79,9 @@ def test_buy_and_hold_equity_curve(backtester, price_df):
     assert list(equity_curve.columns) == ['date', 'close']
     assert len(equity_curve) == len(price_df)
     assert equity_curve.iloc[0]['close'] == pytest.approx(shares * 100)
-    assert equity_curve.iloc[-1]['close'] == pytest.approx(shares * 110)
+    assert equity_curve.iloc[-1]['close'] == pytest.approx(
+        shares * 110 * (1 - Backtester.COMMISSION_RATE - Backtester.TAX_RATE)
+    )
 
 
 def test_buy_and_hold_single_day(backtester):

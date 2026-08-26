@@ -14,8 +14,8 @@ def test_evaluate_splits_periods_and_resets_the_account():
 
     assert result["periods"]["in_sample"]["result"]["buy_price"] == 100
     assert result["periods"]["out_of_sample"]["result"]["buy_price"] == 200
-    assert result["periods"]["in_sample"]["metrics"]["total_return"] == pytest.approx(10.0)
-    assert result["periods"]["out_of_sample"]["metrics"]["total_return"] == pytest.approx(10.0)
+    assert result["periods"]["in_sample"]["metrics"]["total_return"] == pytest.approx(9.51)
+    assert result["periods"]["out_of_sample"]["metrics"]["total_return"] == pytest.approx(9.51)
     assert list(result["comparison"]["period"]) == ["in_sample", "out_of_sample"]
 
 

@@ -26,13 +26,21 @@ class Backtester:
         self,
         slippage_rate: float = DEFAULT_SLIPPAGE_RATE,
         position_size: float = 1.0,
+        commission_rate: float = COMMISSION_RATE,
+        tax_rate: float = TAX_RATE,
     ):
         if slippage_rate < 0:
             raise ValueError("slippage_rate must be non-negative")
         if not 0 < position_size <= 1:
             raise ValueError("position_size must be greater than 0 and at most 1")
+        if commission_rate < 0:
+            raise ValueError("commission_rate must be non-negative")
+        if tax_rate < 0:
+            raise ValueError("tax_rate must be non-negative")
         self.slippage_rate = slippage_rate
         self.position_size = position_size
+        self.commission_rate = commission_rate
+        self.tax_rate = tax_rate
 
     def _fill_price(self, market_price: float, side: str, include_cost: bool) -> float:
         """Return the adverse fill price for a buy or sell order."""
@@ -46,11 +54,11 @@ class Backtester:
 
     def _buy_cash_per_share(self, market_price: float, include_cost: bool) -> float:
         fill_price = self._fill_price(market_price, 'buy', include_cost)
-        return fill_price * (1 + self.COMMISSION_RATE) if include_cost else fill_price
+        return fill_price * (1 + self.commission_rate) if include_cost else fill_price
 
     def _sell_cash_per_share(self, market_price: float, include_cost: bool) -> float:
         fill_price = self._fill_price(market_price, 'sell', include_cost)
-        return fill_price * (1 - self.COMMISSION_RATE - self.TAX_RATE) if include_cost else fill_price
+        return fill_price * (1 - self.commission_rate - self.tax_rate) if include_cost else fill_price
 
     def _trade_return(self, buy_price: float, sell_price: float, include_cost: bool) -> float:
         cost = self._buy_cash_per_share(buy_price, include_cost)
@@ -58,9 +66,7 @@ class Backtester:
         return (income - cost) / cost * 100
 
     def _position_shares(self, cash: float, market_price: float, include_cost: bool) -> float:
-        """Keep legacy equity curves unchanged until slippage is explicitly enabled."""
-        if not include_cost or self.slippage_rate == 0:
-            return cash / market_price
+        """Return the affordable shares after the buy-side execution costs."""
         return cash / self._buy_cash_per_share(market_price, include_cost)
 
     def _open_position(
@@ -72,9 +78,14 @@ class Backtester:
         return shares, cash - capital_used
 
     def _liquidation_cash(self, shares: float, market_price: float, include_cost: bool) -> float:
-        if not include_cost or self.slippage_rate == 0:
-            return shares * market_price
         return shares * self._sell_cash_per_share(market_price, include_cost)
+
+    @staticmethod
+    def _total_return_from_equity(equity_df: pd.DataFrame, initial_capital: float) -> float:
+        """Calculate portfolio return from the same cost-inclusive equity curve."""
+        if equity_df.empty:
+            return 0.0
+        return (float(equity_df.iloc[-1]["close"]) / initial_capital - 1) * 100
 
     def buy_and_hold(self, price_df: pd.DataFrame, include_cost: bool = True) -> dict:
         """
@@ -99,6 +110,11 @@ class Backtester:
         shares = initial_capital / self._buy_cash_per_share(buy_price, include_cost)
         equity_df = df[['date']].copy()
         equity_df['close'] = shares * df['close']
+        # The final observation represents the stated sale, so include its
+        # commission and transaction tax as well.
+        equity_df.loc[equity_df.index[-1], 'close'] = self._liquidation_cash(
+            shares, sell_price, include_cost
+        )
 
         return {
             "buy_date": df.iloc[0]['date'],
@@ -106,6 +122,7 @@ class Backtester:
             "buy_price": buy_price,
             "sell_price": sell_price,
             "returns": round(returns, 2),
+            "total_return": round(returns, 2),
             "holding_days": len(df),
             "include_cost" : include_cost,
             "slippage_rate": self.slippage_rate if include_cost else 0.0,
@@ -329,10 +346,7 @@ class Backtester:
 
         equity_df = pd.DataFrame(equity_data)
 
-        if len(trades) == 0:
-            total_return = 0
-        else:
-            total_return = sum(t['return'] for t in trades)
+        total_return = self._total_return_from_equity(equity_df, initial_capital)
 
         return {
             'trades': trades,
@@ -411,10 +425,7 @@ class Backtester:
 
         equity_df = pd.DataFrame(equity_data)
 
-        if len(trades) == 0:
-            total_return = 0
-        else:
-            total_return = sum(t['return'] for t in trades)
+        total_return = self._total_return_from_equity(equity_df, initial_capital)
 
         return {
             'trades': trades,
@@ -490,10 +501,7 @@ class Backtester:
 
         equity_df = pd.DataFrame(equity_data)
 
-        if len(trades) == 0:
-            total_return = 0
-        else:
-            total_return = sum(t['return'] for t in trades)
+        total_return = self._total_return_from_equity(equity_df, initial_capital)
 
         return {
             'trades': trades,
@@ -587,10 +595,7 @@ class Backtester:
 
         equity_df = pd.DataFrame(equity_data)
 
-        if len(trades) == 0:
-            total_return = 0
-        else:
-            total_return = sum(t['return'] for t in trades)
+        total_return = self._total_return_from_equity(equity_df, initial_capital)
 
         return {
             'trades': trades,

@@ -19,10 +19,11 @@ def test_ma_strategy_uses_only_configured_fraction_of_cash():
     assert result['position_size'] == 0.2
     assert trade['position_size'] == 0.2
     assert trade['capital_used'] == pytest.approx(200_000)
-    assert trade['shares'] == pytest.approx(200_000 / 19)
+    shares = 200_000 / (19 * (1 + Backtester.COMMISSION_RATE))
+    assert trade['shares'] == pytest.approx(shares)
     # 80% cash is preserved; the 20% position is then sold at 5.
     assert result['equity_curve'].iloc[-1]['close'] == pytest.approx(
-        800_000 + (200_000 / 19) * 5
+        800_000 + shares * 5 * (1 - Backtester.COMMISSION_RATE - Backtester.TAX_RATE)
     )
 
 

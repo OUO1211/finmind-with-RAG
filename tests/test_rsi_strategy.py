@@ -87,7 +87,7 @@ def test_rsi_strategy_still_holding_produces_no_trade(backtester):
     assert result['trades'] == []
     # 用 equity_curve 確認買進真的執行了（01-05 開盤價 79 買進），
     # 不是「訊號跟執行都沒發生」導致的假陽性
-    shares = 1_000_000 / 79
+    shares = 1_000_000 / (79 * (1 + Backtester.COMMISSION_RATE))
     assert result['equity_curve'].iloc[1]['close'] == pytest.approx(shares * 80)
 
 
@@ -112,7 +112,9 @@ def test_rsi_strategy_equity_curve(backtester, price_df):
     # 01-04 尚未買進（訊號要到 01-05 開盤才執行），維持初始資金
     assert equity_curve.iloc[0]['close'] == 1_000_000
     # 01-05 以開盤價 84 買進，equity 用當天收盤價 85 估市值
-    shares = 1_000_000 / 84
+    shares = 1_000_000 / (84 * (1 + Backtester.COMMISSION_RATE))
     assert equity_curve.iloc[1]['close'] == pytest.approx(shares * 85)
     # 01-09 賣出後，資金維持在賣出當下的市值
-    assert equity_curve.iloc[5]['close'] == pytest.approx(shares * 104)
+    assert equity_curve.iloc[5]['close'] == pytest.approx(
+        shares * 104 * (1 - Backtester.COMMISSION_RATE - Backtester.TAX_RATE)
+    )

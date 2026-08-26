@@ -125,6 +125,6 @@ def test_ma_strategy_equity_curve(backtester, price_df):
     assert equity_curve.iloc[0]['close'] == 1_000_000
     assert equity_curve.iloc[1]['close'] == 1_000_000
     # 01-05 以開盤價 19 買進，equity 用當天收盤價 20 估市值
-    shares = 1_000_000 / 19
+    shares = 1_000_000 / (19 * (1 + Backtester.COMMISSION_RATE))
     assert equity_curve.iloc[2]['close'] == pytest.approx(shares * 20)
     assert equity_curve.iloc[3]['close'] == pytest.approx(shares * 20)

@@ -1,0 +1,28 @@
+version: forward-test-v1
+frozen_at: 2026-08-27
+start_date: 2026-08-28
+initial_capital: 1000000
+
+universe:
+  rule: daily_top_market_cap
+  max_stocks: 50
+  reference_stock_id: "2330"
+  common_stocks_only: true
+
+strategy:
+  name: kd_crossover
+  period: 9
+  buy_rule: previous_k_below_d_and_current_k_above_d
+  sell_rule: previous_k_above_d_and_current_k_below_d
+  signal_time: close
+  execution_time: next_trading_day_open
+
+portfolio:
+  allocation: equal_weight_vacant_slots
+  max_positions: 5
+  rebalance_existing_positions: false
+
+costs:
+  commission_rate: 0.001425
+  sell_tax_rate: 0.003
+  slippage_rate: 0.001

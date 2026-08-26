@@ -101,7 +101,7 @@ def test_pe_strategy_still_holding_produces_no_trade(backtester):
     assert result['trades'] == []
     # 用 equity_curve 確認買進真的執行了（01-02 開盤價 99 買進），
     # 不是「訊號跟執行都沒發生」導致的假陽性
-    shares = 1_000_000 / 99
+    shares = 1_000_000 / (99 * (1 + Backtester.COMMISSION_RATE))
     assert result['equity_curve'].iloc[1]['close'] == pytest.approx(shares * 100)
 
 
@@ -138,7 +138,7 @@ def test_pe_strategy_sorts_by_date(backtester):
 
     result = backtester.pe_strategy(price_df, per_df, include_cost=True)
 
-    shares = 1_000_000 / 99
+    shares = 1_000_000 / (99 * (1 + Backtester.COMMISSION_RATE))
     equity_curve = result['equity_curve']
     assert list(equity_curve['date']) == ['2024-01-01', '2024-01-02', '2024-01-03']
     assert equity_curve.iloc[0]['close'] == 1_000_000
@@ -155,5 +155,5 @@ def test_pe_strategy_equity_curve(backtester, price_df, per_df):
     assert equity_curve.iloc[0]['close'] == 1_000_000
     assert equity_curve.iloc[1]['close'] == 1_000_000
     # 01-03 以開盤價 104 買進，equity 用當天收盤價 105 估市值
-    shares = 1_000_000 / 104
+    shares = 1_000_000 / (104 * (1 + Backtester.COMMISSION_RATE))
     assert equity_curve.iloc[2]['close'] == pytest.approx(shares * 105)
