@@ -1,0 +1,175 @@
+[1mdiff --git a/configs/forward_test_v1.yaml b/configs/forward_test_v1.yaml[m
+[1mnew file mode 100644[m
+[1mindex 0000000..ce5daa1[m
+[1m--- /dev/null[m
+[1m+++ b/configs/forward_test_v1.yaml[m
+[36m@@ -0,0 +1,28 @@[m
+[32m+[m[32mversion: forward-test-v1[m
+[32m+[m[32mfrozen_at: 2026-08-27[m
+[32m+[m[32mstart_date: 2026-08-28[m
+[32m+[m[32minitial_capital: 1000000[m
+[32m+[m
+[32m+[m[32muniverse:[m
+[32m+[m[32m  rule: daily_top_market_cap[m
+[32m+[m[32m  max_stocks: 50[m
+[32m+[m[32m  reference_stock_id: "2330"[m
+[32m+[m[32m  common_stocks_only: true[m
+[32m+[m
+[32m+[m[32mstrategy:[m
+[32m+[m[32m  name: kd_crossover[m
+[32m+[m[32m  period: 9[m
+[32m+[m[32m  buy_rule: previous_k_below_d_and_current_k_above_d[m
+[32m+[m[32m  sell_rule: previous_k_above_d_and_current_k_below_d[m
+[32m+[m[32m  signal_time: close[m
+[32m+[m[32m  execution_time: next_trading_day_open[m
+[32m+[m
+[32m+[m[32mportfolio:[m
+[32m+[m[32m  allocation: equal_weight_vacant_slots[m
+[32m+[m[32m  max_positions: 5[m
+[32m+[m[32m  rebalance_existing_positions: false[m
+[32m+[m
+[32m+[m[32mcosts:[m
+[32m+[m[32m  commission_rate: 0.001425[m
+[32m+[m[32m  sell_tax_rate: 0.003[m
+[32m+[m[32m  slippage_rate: 0.001[m
+[1mdiff --git a/src/backtester.py b/src/backtester.py[m
+[1mindex 4bcbc24..cd2536b 100644[m
+[1m--- a/src/backtester.py[m
+[1m+++ b/src/backtester.py[m
+[36m@@ -26,13 +26,21 @@[m [mclass Backtester:[m
+         self,[m
+         slippage_rate: float = DEFAULT_SLIPPAGE_RATE,[m
+         position_size: float = 1.0,[m
+[32m+[m[32m        commission_rate: float = COMMISSION_RATE,[m
+[32m+[m[32m        tax_rate: float = TAX_RATE,[m
+     ):[m
+         if slippage_rate < 0:[m
+             raise ValueError("slippage_rate must be non-negative")[m
+         if not 0 < position_size <= 1:[m
+             raise ValueError("position_size must be greater than 0 and at most 1")[m
+[32m+[m[32m        if commission_rate < 0:[m
+[32m+[m[32m            raise ValueError("commission_rate must be non-negative")[m
+[32m+[m[32m        if tax_rate < 0:[m
+[32m+[m[32m            raise ValueError("tax_rate must be non-negative")[m
+         self.slippage_rate = slippage_rate[m
+         self.position_size = position_size[m
+[32m+[m[32m        self.commission_rate = commission_rate[m
+[32m+[m[32m        self.tax_rate = tax_rate[m
+ [m
+     def _fill_price(self, market_price: float, side: str, include_cost: bool) -> float:[m
+         """Return the adverse fill price for a buy or sell order."""[m
+[36m@@ -46,11 +54,11 @@[m [mclass Backtester:[m
+ [m
+     def _buy_cash_per_share(self, market_price: float, include_cost: bool) -> float:[m
+         fill_price = self._fill_price(market_price, 'buy', include_cost)[m
+[31m-        return fill_price * (1 + self.COMMISSION_RATE) if include_cost else fill_price[m
+[32m+[m[32m        return fill_price * (1 + self.commission_rate) if include_cost else fill_price[m
+ [m
+     def _sell_cash_per_share(self, market_price: float, include_cost: bool) -> float:[m
+         fill_price = self._fill_price(market_price, 'sell', include_cost)[m
+[31m-        return fill_price * (1 - self.COMMISSION_RATE - self.TAX_RATE) if include_cost else fill_price[m
+[32m+[m[32m        return fill_price * (1 - self.commission_rate - self.tax_rate) if include_cost else fill_price[m
+ [m
+     def _trade_return(self, buy_price: float, sell_price: float, include_cost: bool) -> float:[m
+         cost = self._buy_cash_per_share(buy_price, include_cost)[m
+[36m@@ -58,9 +66,7 @@[m [mclass Backtester:[m
+         return (income - cost) / cost * 100[m
+ [m
+     def _position_shares(self, cash: float, market_price: float, include_cost: bool) -> float:[m
+[31m-        """Keep legacy equity curves unchanged until slippage is explicitly enabled."""[m
+[31m-        if not include_cost or self.slippage_rate == 0:[m
+[31m-            return cash / market_price[m
+[32m+[m[32m        """Return the affordable shares after the buy-side execution costs."""[m
+         return cash / self._buy_cash_per_share(market_price, include_cost)[m
+ [m
+     def _open_position([m
+[36m@@ -72,10 +78,15 @@[m [mclass Backtester:[m
+         return shares, cash - capital_used[m
+ [m
+     def _liquidation_cash(self, shares: float, market_price: float, include_cost: bool) -> float:[m
+[31m-        if not include_cost or self.slippage_rate == 0:[m
+[31m-            return shares * market_price[m
+         return shares * self._sell_cash_per_share(market_price, include_cost)[m
+ [m
+[32m+[m[32m    @staticmethod[m
+[32m+[m[32m    def _total_return_from_equity(equity_df: pd.DataFrame, initial_capital: float) -> float:[m
+[32m+[m[32m        """Calculate portfolio return from the same cost-inclusive equity curve."""[m
+[32m+[m[32m        if equity_df.empty:[m
+[32m+[m[32m            return 0.0[m
+[32m+[m[32m        return (float(equity_df.iloc[-1]["close"]) / initial_capital - 1) * 100[m
+[32m+[m
+     def buy_and_hold(self, price_df: pd.DataFrame, include_cost: bool = True) -> dict:[m
+         """[m
+         計算買進持有報酬率[m
+[36m@@ -99,6 +110,11 @@[m [mclass Backtester:[m
+         shares = initial_capital / self._buy_cash_per_share(buy_price, include_cost)[m
+         equity_df = df[['date']].copy()[m
+         equity_df['close'] = shares * df['close'][m
+[32m+[m[32m        # The final observation represents the stated sale, so include its[m
+[32m+[m[32m        # commission and transaction tax as well.[m
+[32m+[m[32m        equity_df.loc[equity_df.index[-1], 'close'] = self._liquidation_cash([m
+[32m+[m[32m            shares, sell_price, include_cost[m
+[32m+[m[32m        )[m
+ [m
+         return {[m
+             "buy_date": df.iloc[0]['date'],[m
+[36m@@ -106,6 +122,7 @@[m [mclass Backtester:[m
+             "buy_price": buy_price,[m
+             "sell_price": sell_price,[m
+             "returns": round(returns, 2),[m
+[32m+[m[32m            "total_return": round(returns, 2),[m
+             "holding_days": len(df),[m
+             "include_cost" : include_cost,[m
+             "slippage_rate": self.slippage_rate if include_cost else 0.0,[m
+[36m@@ -329,10 +346,7 @@[m [mclass Backtester:[m
+ [m
+         equity_df = pd.DataFrame(equity_data)[m
+ [m
+[31m-        if len(trades) == 0:[m
+[31m-            total_return = 0[m
+[31m-        else:[m
+[31m-            total_return = sum(t['return'] for t in trades)[m
+[32m+[m[32m        total_return = self._total_return_from_equity(equity_df, initial_capital)[m
+ [m
+         return {[m
+             'trades': trades,[m
+[36m@@ -411,10 +425,7 @@[m [mclass Backtester:[m
+ [m
+         equity_df = pd.DataFrame(equity_data)[m
+ [m
+[31m-        if len(trades) == 0:[m
+[31m-            total_return = 0[m
+[31m-        else:[m
+[31m-            total_return = sum(t['return'] for t in trades)[m
+[32m+[m[32m        total_return = self._total_return_from_equity(equity_df, initial_capital)[m
+ [m
+         return {[m
+             'trades': trades,[m
+[36m@@ -490,10 +501,7 @@[m [mclass Backtester:[m
+ [m
+         equity_df = pd.DataFrame(equity_data)[m
+ [m
+[31m-        if len(trades) == 0:[m
+[31m-            total_return = 0[m
+[31m-        else:[m
+[31m-            total_return = sum(t['return'] for t in trades)[m
+[32m+[m[32m        total_return = self._total_return_from_equity(equity_df, initial_capital)[m
+ [m
+         return {[m
+             'trades': trades,[m
+[36m@@ -587,10 +595,7 @@[m [mclass Backtester:[m
+ [m
+         equity_df = pd.DataFrame(equity_data)[m
+ [m
+[31m-        if len(trades) == 0:[m
+[31m-            total_return = 0[m
+[31m-        else:[m
+[31m-            total_return = sum(t['return'] for t in trades)[m
+[32m+[m[32m        total_return = self._total_return_from_equity(equity_df, initial_capital)[m
+ [m
+         return {[m
+             'trades': trades,[m
+[1mdiff --git a/src/forward_test_spec.py b/src/forward_test_spec.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..c9fb54b[m
+[1m--- /dev/nul

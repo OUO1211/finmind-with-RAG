@@ -17,3 +17,5 @@ __pycache__/
 # Test coverage
 .coverage
 
+# Pytest temporary files
+.pytest_tmp/
